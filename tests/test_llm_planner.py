@@ -119,3 +119,26 @@ def test_mcp_tools_falls_back_to_rule_based_when_no_planner_env(monkeypatch: pyt
     from intent_fabric.mcp.tools import IntentFabricMCPTools
     tools = IntentFabricMCPTools()
     assert isinstance(tools._planner, RuleBasedPlanner)
+
+
+def test_planner_registry_list_and_register() -> None:
+    from intent_fabric.planning.llm import PlannerRegistry
+
+    planners = PlannerRegistry.list_planners()
+    assert "ollama" in planners
+    assert "openai" in planners
+    assert "gemini" in planners
+    assert "foundry" in planners
+
+    class CustomPlanner:
+        def create_plan(self, intent, evidence):
+            return "custom"
+
+    PlannerRegistry.register("custom_test", lambda: CustomPlanner())
+    assert PlannerRegistry.is_registered("custom_test")
+    inst = PlannerRegistry.get("custom_test")
+    assert isinstance(inst, CustomPlanner)
+
+    # Test build_planner with custom registered name
+    planner = build_planner("custom_test")
+    assert isinstance(planner, CustomPlanner)

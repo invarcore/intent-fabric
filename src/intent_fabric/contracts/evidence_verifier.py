@@ -8,7 +8,9 @@ corruption, delimiter collisions, or replay of stale evidence.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -28,6 +30,7 @@ class VerificationResult:
     digest_valid: bool = True
     fingerprint_present: bool = True
     freshness_valid: bool = True
+    signature_valid: bool = True
     errors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -63,9 +66,35 @@ def compute_package_digest(chunk_hashes: list[str]) -> str:
     return hashlib.sha256(combined).hexdigest()
 
 
+def compute_package_signature(
+    retrieval_id: str,
+    tenant_id: str | None,
+    query_fingerprint: str,
+    provenance_digest: str,
+    timestamp_utc: str,
+    key: str | bytes | None = None,
+) -> str:
+    """Compute HMAC-SHA256 signature for evidence package provenance.
+
+    Formula: HMAC-SHA256(key, f"{retrieval_id}:{tenant_id or ''}:{query_fingerprint}:{provenance_digest}:{timestamp_utc}")
+    Returns empty string if key is not configured.
+    """
+    secret = key if key is not None else os.environ.get("KF_EVIDENCE_HMAC_KEY", "")
+    if not secret:
+        return ""
+    if isinstance(secret, str):
+        secret_bytes = secret.encode("utf-8")
+    else:
+        secret_bytes = secret
+    tenant = tenant_id or ""
+    msg = f"{retrieval_id}:{tenant}:{query_fingerprint}:{provenance_digest}:{timestamp_utc}".encode("utf-8")
+    return hmac.new(secret_bytes, msg, hashlib.sha256).hexdigest()
+
+
 def verify_evidence_package(
     package: dict[str, Any],
     max_age_seconds: float = 60.0,
+    hmac_key: str | bytes | None = None,
 ) -> VerificationResult:
     """Verify cryptographic provenance of a Task 1 EvidencePackage dictionary.
 
@@ -214,6 +243,38 @@ def verify_evidence_package(
             digest_valid=False,
         )
 
+    # 5. Keyed HMAC Provenance Signature Verification (when HMAC key is configured)
+    hmac_secret = hmac_key if hmac_key is not None else os.environ.get("KF_EVIDENCE_HMAC_KEY", "")
+    if hmac_secret:
+        reported_sig = str(package.get("package_signature", ""))
+        if not reported_sig:
+            return VerificationResult(
+                is_valid=False,
+                error_reason="Missing package_signature on HMAC-protected evidence package",
+                checked_chunks=len(chunks),
+                digest_valid=True,
+                freshness_valid=True,
+                signature_valid=False,
+            )
+        q_fingerprint = str(package.get("query_fingerprint", ""))
+        expected_sig = compute_package_signature(
+            retrieval_id=str(package.get("retrieval_id", "")),
+            tenant_id=str(package.get("tenant_id") or ""),
+            query_fingerprint=q_fingerprint,
+            provenance_digest=reported_digest,
+            timestamp_utc=str(package.get("timestamp_utc", "")),
+            key=hmac_secret,
+        )
+        if not hmac.compare_digest(reported_sig, expected_sig):
+            return VerificationResult(
+                is_valid=False,
+                error_reason="Invalid package_signature: HMAC verification failed",
+                checked_chunks=len(chunks),
+                digest_valid=True,
+                freshness_valid=True,
+                signature_valid=False,
+            )
+
     return VerificationResult(
         is_valid=True,
         error_reason=None,
@@ -221,6 +282,7 @@ def verify_evidence_package(
         failed_chunks=[],
         digest_valid=True,
         freshness_valid=True,
+        signature_valid=True,
     )
 
 
@@ -228,6 +290,7 @@ def verify_evidence(
     payload: dict[str, object],
     *,
     max_age_seconds: float = 60.0,
+    hmac_key: str | bytes | None = None,
 ) -> VerificationResult:
     """Verify cryptographic provenance of an evidence payload.
 
@@ -246,7 +309,7 @@ def verify_evidence(
 
     # If modern Task 1 package schema, use verify_evidence_package
     if "chunks" in payload and "retrieval_id" in payload:
-        return verify_evidence_package(payload, max_age_seconds=max_age_seconds)
+        return verify_evidence_package(payload, max_age_seconds=max_age_seconds, hmac_key=hmac_key)
 
     # Legacy Knowledge Fabric payload adapter
     errors: list[str] = []

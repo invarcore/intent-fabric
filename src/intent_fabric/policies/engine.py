@@ -58,3 +58,8 @@ class PolicyEngine:
             reasons=reasons,
             requires_approval=(decision_type == PolicyDecisionType.REQUIRES_APPROVAL),
         )
+
+    @property
+    def rules_count(self) -> int:
+        """Return the number of loaded policy rules."""
+        return len(self._loader.get().rules)

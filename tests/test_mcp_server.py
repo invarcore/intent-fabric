@@ -56,6 +56,7 @@ def test_mcp_server_tools_execute_end_to_end(monkeypatch) -> None:
     # 1. Health check
     hc = tools["health_check"]()
     assert hc["payload"]["status"] == "healthy"
+    assert hc["payload"]["policy_rules_count"] > 0
 
     # 2. Create plan
     plan_envelope = tools["create_plan_from_evidence"](

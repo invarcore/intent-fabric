@@ -18,6 +18,7 @@ from typing import Any
 from intent_fabric.contracts.evidence_verifier import (
     compute_chunk_hash,
     compute_package_digest,
+    compute_package_signature,
     verify_evidence_package,
 )
 
@@ -174,3 +175,49 @@ def test_canonical_json_prevents_delimiter_collision():
     hash_2 = compute_chunk_hash("a", "b:c")
 
     assert hash_1 != hash_2
+
+
+def test_hmac_signed_package_verification_success():
+    """An evidence package signed with HMAC key passes verification."""
+    package = _make_valid_package()
+    key = "secret-test-hmac-key"
+    package["query_fingerprint"] = "fingerprint-123"
+    package["package_signature"] = compute_package_signature(
+        retrieval_id=package["retrieval_id"],
+        tenant_id=package["tenant_id"],
+        query_fingerprint=package["query_fingerprint"],
+        provenance_digest=package["provenance_digest"],
+        timestamp_utc=package["timestamp_utc"],
+        key=key,
+    )
+
+    result = verify_evidence_package(package, hmac_key=key)
+    assert result.is_valid is True
+    assert result.signature_valid is True
+    assert result.error_reason is None
+
+
+def test_hmac_tampered_signature_fails():
+    """An altered HMAC signature is rejected."""
+    package = _make_valid_package()
+    key = "secret-test-hmac-key"
+    package["query_fingerprint"] = "fingerprint-123"
+    package["package_signature"] = "deadbeef" * 8
+
+    result = verify_evidence_package(package, hmac_key=key)
+    assert result.is_valid is False
+    assert result.signature_valid is False
+    assert "HMAC verification failed" in (result.error_reason or "")
+
+
+def test_hmac_missing_signature_when_key_configured_fails():
+    """When HMAC key is enforced, missing signature fails closed."""
+    package = _make_valid_package()
+    key = "secret-test-hmac-key"
+    # No package_signature present
+
+    result = verify_evidence_package(package, hmac_key=key)
+    assert result.is_valid is False
+    assert result.signature_valid is False
+    assert "Missing package_signature" in (result.error_reason or "")
+

@@ -1,14 +1,18 @@
 """Cryptographic signing and verification for human-in-the-loop approvals.
 
-Prevents approval forgery, tampering in transit, and non-repudiation
-of sensitive action authorization.
+Provides symmetric authentication and integrity verification to prevent approval
+forgery and tampering in transit for sensitive action authorization.
+
+Note: HMAC is a symmetric MAC scheme; it guarantees integrity and authenticity
+between trusted system components, not non-repudiation against key-holders.
 """
 
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 import os
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -17,12 +21,26 @@ _DEFAULT_DEV_KEY = "fabric-insecure-dev-hmac-key-change-in-production"
 
 
 def get_signing_key(override_key: str | None = None) -> bytes:
-    """Retrieve the HMAC signing key from parameter, environment, or default."""
+    """Retrieve the HMAC signing key from parameter, environment, or default.
+
+    In production/staging environments, FABRIC_SIGNING_KEY is strictly required.
+    In local development, an insecure default is permitted with a loud warning.
+    """
     if override_key:
         return override_key.encode("utf-8")
     env_key = os.environ.get("FABRIC_SIGNING_KEY", "")
     if env_key:
         return env_key.encode("utf-8")
+    env = os.environ.get("FABRIC_ENV", os.environ.get("ENVIRONMENT", "development")).lower()
+    if env in ("production", "prod", "staging"):
+        raise ValueError(
+            "FABRIC_SIGNING_KEY environment variable is required in production/staging environments."
+        )
+    warnings.warn(
+        "Using insecure default HMAC signing key. Set FABRIC_SIGNING_KEY in production.",
+        UserWarning,
+        stacklevel=2,
+    )
     return _DEFAULT_DEV_KEY.encode("utf-8")
 
 

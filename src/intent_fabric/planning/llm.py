@@ -304,46 +304,6 @@ class GeminiLLMPlanner:
         return _parse_llm_plan(raw_json, intent, evidence)
 
 
-def build_planner(
-    planner_name: str = "",
-) -> OllamaLLMPlanner | OpenAILLMPlanner | FoundryLocalLLMPlanner | GeminiLLMPlanner | None:
-    """Factory that reads INTENT_PLANNER env var and returns the right planner.
-
-    Returns None to signal "use the default RuleBasedPlanner (regex-based)".
-
-    Recommended for vendor-neutral local dev (no API key required):
-        INTENT_PLANNER=ollama    → OllamaLLMPlanner.from_env()
-        Quick-start: ollama pull llama3 && export INTENT_PLANNER=ollama
-
-    Cloud alternatives (all equal, choose what fits your infrastructure):
-        INTENT_PLANNER=openai    → OpenAILLMPlanner.from_env()   (requires OPENAI_API_KEY)
-        INTENT_PLANNER=gemini    → GeminiLLMPlanner.from_env()   (requires GEMINI_API_KEY)
-        INTENT_PLANNER=foundry   → FoundryLocalLLMPlanner.from_env() (local, no API key)
-
-    None / unset → RuleBasedPlanner is used (regex, no external deps, suitable for demos).
-    """
-    import warnings
-
-    name = (planner_name or os.environ.get("INTENT_PLANNER", "")).lower().strip()
-    if name == "ollama":
-        return OllamaLLMPlanner.from_env()
-    if name == "openai":
-        return OpenAILLMPlanner.from_env()
-    if name == "gemini":
-        return GeminiLLMPlanner.from_env()
-    if name == "foundry":
-        return FoundryLocalLLMPlanner.from_env()
-    if not name:
-        warnings.warn(
-            "\n\n⚠  INTENT_PLANNER is not set. Using RuleBasedPlanner (regex-based, demo quality).\n"
-            "   For real AI-generated plans set: INTENT_PLANNER=ollama (free, local, vendor-neutral).\n"
-            "   Cloud alternatives: openai, gemini, foundry.\n",
-            stacklevel=2,
-        )
-    return None
-
-
-
 class FoundryLocalLLMPlanner:
     """Calls a local Microsoft Foundry server for AI-generated plans.
 
@@ -399,3 +359,73 @@ class FoundryLocalLLMPlanner:
             result = json.loads(response.read().decode("utf-8"))
         raw_json = result["choices"][0]["message"]["content"]
         return _parse_llm_plan(raw_json, intent, evidence)
+
+
+class PlannerRegistry:
+    """Extensible registry for LLM-backed and rule-based planners."""
+
+    _factories: dict[str, Any] = {}
+
+    @classmethod
+    def register(cls, name: str, factory: Any) -> None:
+        """Register a planner factory under a given name."""
+        cls._factories[name.lower().strip()] = factory
+
+    @classmethod
+    def get(cls, name: str) -> Any:
+        """Resolve and instantiate a planner by name."""
+        key = name.lower().strip()
+        if key in cls._factories:
+            factory = cls._factories[key]
+            return factory() if callable(factory) else factory
+        raise KeyError(
+            f"No planner registered under name '{name}'. "
+            f"Available planners: {sorted(cls._factories.keys())}"
+        )
+
+    @classmethod
+    def is_registered(cls, name: str) -> bool:
+        return name.lower().strip() in cls._factories
+
+    @classmethod
+    def list_planners(cls) -> list[str]:
+        return sorted(list(cls._factories.keys()))
+
+
+PlannerRegistry.register("ollama", OllamaLLMPlanner.from_env)
+PlannerRegistry.register("openai", OpenAILLMPlanner.from_env)
+PlannerRegistry.register("gemini", GeminiLLMPlanner.from_env)
+PlannerRegistry.register("foundry", FoundryLocalLLMPlanner.from_env)
+
+
+def build_planner(
+    planner_name: str = "",
+) -> Any:
+    """Factory that reads INTENT_PLANNER env var and returns the right planner.
+
+    Returns None to signal "use the default RuleBasedPlanner (regex-based)".
+
+    Recommended for vendor-neutral local dev (no API key required):
+        INTENT_PLANNER=ollama    → OllamaLLMPlanner.from_env()
+        Quick-start: ollama pull llama3 && export INTENT_PLANNER=ollama
+
+    Cloud alternatives (all equal, choose what fits your infrastructure):
+        INTENT_PLANNER=openai    → OpenAILLMPlanner.from_env()   (requires OPENAI_API_KEY)
+        INTENT_PLANNER=gemini    → GeminiLLMPlanner.from_env()   (requires GEMINI_API_KEY)
+        INTENT_PLANNER=foundry   → FoundryLocalLLMPlanner.from_env() (local, no API key)
+
+    None / unset → RuleBasedPlanner is used (regex, no external deps, suitable for demos).
+    """
+    import warnings
+
+    name = (planner_name or os.environ.get("INTENT_PLANNER", "")).lower().strip()
+    if name and PlannerRegistry.is_registered(name):
+        return PlannerRegistry.get(name)
+    if not name:
+        warnings.warn(
+            "\n\n⚠  INTENT_PLANNER is not set. Using RuleBasedPlanner (regex-based, demo quality).\n"
+            "   For real AI-generated plans set: INTENT_PLANNER=ollama (free, local, vendor-neutral).\n"
+            "   Cloud alternatives: openai, gemini, foundry.\n",
+            stacklevel=2,
+        )
+    return None

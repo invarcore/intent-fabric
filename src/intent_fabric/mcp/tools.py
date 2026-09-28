@@ -51,7 +51,7 @@ class IntentFabricMCPTools:
 
     def health_check(self) -> dict[str, Any]:
         planner_name = type(self._planner).__name__
-        rules_count = len(getattr(getattr(self._policy_engine, "_loader", None), "rules", [])) if hasattr(self._policy_engine, "_loader") else 0
+        rules_count = getattr(self._policy_engine, "rules_count", 0)
         return envelope(
             tool="health_check",
             payload={
