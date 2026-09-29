@@ -8,16 +8,14 @@ policy rules, and emits a signed execution token exclusively upon authorization.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
-import uuid
 
 from intent_fabric.approvals.signing import SignedExecutionToken, TokenSigner
 from intent_fabric.contracts.evidence_verifier import (
     VerificationResult,
     verify_evidence_package,
 )
-from intent_fabric.models import EvidencePackageReference, IntentRequest
+from intent_fabric.models import EvidenceItemReference, EvidencePackageReference, IntentRequest
 from intent_fabric.planning.planner import Plan, Planner
 from intent_fabric.policies.engine import PolicyDecision, PolicyDecisionType, PolicyEngine
 
@@ -83,19 +81,31 @@ class GovernedPolicyExecutor:
         self._seen_retrieval_ids.add(retrieval_id)
 
         # 3. Evidence-Grounded Planning
-        chunks = evidence_package.get("chunks", [])
-        try:
-            plan = self.planner.create_plan(goal=intent_goal, context_chunks=chunks)
-        except TypeError:
-            intent_req = IntentRequest(
-                intent_id=f"intent-{str(retrieval_id)[:8]}",
-                user_request=intent_goal,
+        items: List[EvidenceItemReference] = []
+        for ch in evidence_package.get("chunks", []):
+            item = EvidenceItemReference(
+                chunk_id=ch.get("chunk_id", 0),
+                document_uri=ch.get("document_uri", ""),
+                snippet=ch.get("snippet", ch.get("content", "")),
+                score=float(ch.get("score", 1.0)),
+                metadata=ch.get("metadata", {}),
+                provenance_hash=ch.get("chunk_hash", ch.get("provenance_hash", "")),
             )
-            evidence_ref = EvidencePackageReference(
-                query_text=intent_goal,
-                provenance_digest=evidence_package.get("provenance_digest", ""),
-            )
-            plan = self.planner.create_plan(intent=intent_req, evidence=evidence_ref)
+            items.append(item)
+
+        intent_req = IntentRequest(
+            intent_id=f"intent-{str(retrieval_id)[:8]}",
+            user_request=intent_goal,
+        )
+        evidence_ref = EvidencePackageReference(
+            query_text=intent_goal,
+            items=items,
+            retrieval_summary=evidence_package.get("retrieval_summary", {}),
+            provenance_digest=evidence_package.get("provenance_digest", ""),
+            query_fingerprint=evidence_package.get("query_fingerprint", ""),
+            generated_at=evidence_package.get("generated_at", ""),
+        )
+        plan = self.planner.create_plan(intent=intent_req, evidence=evidence_ref)
 
         # 4. Policy Evaluation
         decision = self.policy_engine.evaluate(plan)

@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 def create_mcp_server(tools: IntentFabricMCPTools | None = None) -> Any:
     """Create FastMCP server with intent planning, policy evaluation, and approval tools."""
     try:
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.fastmcp import FastMCP  # pyright: ignore[reportMissingImports,reportAttributeAccessIssue]
     except (ImportError, ModuleNotFoundError):
-        from mcp.server.mcpserver import MCPServer as FastMCP
+        from mcp.server.mcpserver import MCPServer as FastMCP  # pyright: ignore[reportMissingImports,reportAttributeAccessIssue]
 
-    server = FastMCP("intent-fabric")
+    server: Any = FastMCP("intent-fabric")
     tools_instance = tools or IntentFabricMCPTools()
 
     @server.tool(name="health_check")
@@ -109,13 +109,16 @@ def create_mcp_server(tools: IntentFabricMCPTools | None = None) -> Any:
 
     def _call_tool_wrapper(name: str, arguments: dict[str, Any] | None = None, **kwargs: Any) -> Any:
         args = arguments if arguments is not None else kwargs
-        if hasattr(server, "_tool_manager") and name in getattr(server._tool_manager, "_tools", {}):
-            fn = server._tool_manager._tools[name].fn
+        tool_mgr = getattr(server, "_tool_manager", None)
+        if tool_mgr and name in getattr(tool_mgr, "_tools", {}):
+            fn = tool_mgr._tools[name].fn
             return fn(**args)
-        if hasattr(server, "tools") and isinstance(server.tools, dict) and name in server.tools:
-            return server.tools[name](**args)
-        if hasattr(server, "_local_tools") and name in server._local_tools:
-            return server._local_tools[name](**args)
+        server_tools = getattr(server, "tools", None)
+        if isinstance(server_tools, dict) and name in server_tools:
+            return server_tools[name](**args)
+        local_tools = getattr(server, "_local_tools", None)
+        if isinstance(local_tools, dict) and name in local_tools:
+            return local_tools[name](**args)
         if orig_call_tool is not None:
             import asyncio
             try:
@@ -127,7 +130,7 @@ def create_mcp_server(tools: IntentFabricMCPTools | None = None) -> Any:
             return asyncio.run(orig_call_tool(name, args))
         raise KeyError(f"Tool '{name}' not found on MCP server")
 
-    server.call_tool = _call_tool_wrapper
+    setattr(server, "call_tool", _call_tool_wrapper)
 
     return server
 

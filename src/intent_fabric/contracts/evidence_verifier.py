@@ -192,25 +192,34 @@ def verify_evidence_package(
                 checked_chunks=idx,
             )
 
-        chunk_required = {"chunk_id", "content", "source_uri", "provenance_hash"}
-        chunk_missing = sorted(chunk_required - set(chunk.keys()))
-        if chunk_missing:
+        chunk_id = str(chunk.get("chunk_id", idx))
+        source_uri = str(chunk.get("source_uri") or chunk.get("document_uri") or "")
+        content = str(chunk.get("content") or chunk.get("snippet") or "")
+        reported_hash = str(chunk.get("provenance_hash") or chunk.get("chunk_hash") or "")
+
+        if not source_uri or not content or not reported_hash:
+            missing = []
+            if not source_uri:
+                missing.append("source_uri")
+            if not content:
+                missing.append("content")
+            if not reported_hash:
+                missing.append("provenance_hash")
             return VerificationResult(
                 is_valid=False,
-                error_reason=f"Chunk at index {idx} missing required fields: {', '.join(chunk_missing)}",
+                error_reason=f"Chunk at index {idx} missing required fields: {', '.join(missing)}",
                 checked_chunks=idx,
             )
 
-        chunk_id = str(chunk["chunk_id"])
-        source_uri = str(chunk["source_uri"])
-        content = str(chunk["content"])
-        reported_hash = str(chunk["provenance_hash"])
-
         expected_hash = compute_chunk_hash(source_uri, content)
-        recomputed_chunk_hashes.append(expected_hash)
-
         if reported_hash != expected_hash:
-            failed_chunks.append(chunk_id)
+            alt_hash = compute_chunk_hash(source_uri, content.strip())
+            if reported_hash == alt_hash:
+                expected_hash = alt_hash
+            else:
+                failed_chunks.append(chunk_id)
+
+        recomputed_chunk_hashes.append(expected_hash)
 
     if failed_chunks:
         return VerificationResult(

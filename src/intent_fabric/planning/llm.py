@@ -28,6 +28,7 @@ import json
 import os
 import urllib.request
 from hashlib import sha1
+from typing import Any
 
 from intent_fabric.models import (
     ActionContract,

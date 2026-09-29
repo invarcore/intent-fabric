@@ -221,3 +221,18 @@ def test_hmac_missing_signature_when_key_configured_fails():
     assert result.signature_valid is False
     assert "Missing package_signature" in (result.error_reason or "")
 
+
+def test_schema_aliases_and_whitespace_tolerance_passes():
+    """Evidence verification handles document_uri/snippet/chunk_hash aliases and stripped transport whitespace."""
+    package = _make_valid_package()
+    # Replace keys with aliases
+    for chunk in package["chunks"]:
+        chunk["document_uri"] = chunk.pop("source_uri")
+        chunk["snippet"] = chunk.pop("content") + "\n  "  # Trailing whitespace added during transport
+        chunk["chunk_hash"] = chunk.pop("provenance_hash")
+
+    result = verify_evidence_package(package)
+    assert result.is_valid is True
+    assert result.error_reason is None
+
+

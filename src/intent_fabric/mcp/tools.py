@@ -201,7 +201,8 @@ def evaluate_governed_intent(
     reason = None
     if result.decision:
         raw_dec = getattr(result.decision, "decision_type", None) or getattr(result.decision, "decision", None)
-        dec_val = raw_dec.value if hasattr(raw_dec, "value") else str(raw_dec)
+        if raw_dec is not None:
+            dec_val = raw_dec.value if hasattr(raw_dec, "value") else str(raw_dec)
         reason = getattr(result.decision, "reason", None) or (
             result.decision.reasons[0] if getattr(result.decision, "reasons", None) else None
         )
