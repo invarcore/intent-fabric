@@ -293,8 +293,9 @@ class GeminiLLMPlanner:
                 "responseMimeType": "application/json",
             },
         }).encode("utf-8")
+        model_name = self._model.removeprefix("models/")
         request = urllib.request.Request(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent?key={self._api_key}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self._api_key}",
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
