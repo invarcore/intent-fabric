@@ -236,3 +236,26 @@ def test_schema_aliases_and_whitespace_tolerance_passes():
     assert result.error_reason is None
 
 
+def test_hmac_colon_delimiter_collision_resistance():
+    """Verify that colon characters in tenant_id or retrieval_id cannot collide or forge signatures."""
+    key = "secret-test-hmac-key"
+    fp = "fingerprint-123"
+    digest = "digest-abc"
+    ts = "2026-10-02T12:00:00Z"
+
+    sig1 = compute_package_signature("id1", "t:x", fp, digest, ts, key=key)
+    sig2 = compute_package_signature("id1:t", "x", fp, digest, ts, key=key)
+    assert sig1 != sig2, "Canonical signature MUST prevent delimiter collision"
+
+
+def test_query_fingerprint_mismatch_fails():
+    """Package with mismatched query_text and query_fingerprint fails verification."""
+    package = _make_valid_package()
+    package["query_text"] = "different query"
+    package["query_fingerprint"] = "deadbeef" * 8
+    result = verify_evidence_package(package)
+    assert result.is_valid is False
+    assert "Query fingerprint mismatch" in (result.error_reason or "")
+
+
+

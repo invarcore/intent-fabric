@@ -17,7 +17,14 @@ from intent_fabric.approvals.signing import TokenSigner
 
 @pytest.fixture
 def client():
-    return mcp
+    tools = IntentFabricMCPTools()
+
+    class _Client:
+        def call_tool(self, name: str, arguments: dict):
+            fn = getattr(tools, name)
+            return fn(**arguments)
+
+    return _Client()
 
 
 def test_mcp_tools_end_to_end() -> None:

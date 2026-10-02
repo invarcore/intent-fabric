@@ -68,6 +68,14 @@ class GovernedPolicyExecutor:
                 rejection_reasons=[f"Replay detected: retrieval_id '{retrieval_id}' already consumed"],
             )
 
+        # Ensure evidence package is not empty in governed planning
+        chunks_present = evidence_package.get("chunks") or evidence_package.get("items")
+        if not chunks_present:
+            return GovernedExecutionResult(
+                is_authorized=False,
+                rejection_reasons=["Empty evidence package: actions require non-empty verified evidence"],
+            )
+
         # 2. Cryptographic and Freshness Verification
         verification = verify_evidence_package(evidence_package, max_age_seconds=max_age_seconds)
         if not verification.is_valid:
@@ -85,7 +93,7 @@ class GovernedPolicyExecutor:
         for ch in evidence_package.get("chunks", []):
             item = EvidenceItemReference(
                 chunk_id=ch.get("chunk_id", 0),
-                document_uri=ch.get("document_uri", ""),
+                document_uri=ch.get("source_uri") or ch.get("document_uri") or "",
                 snippet=ch.get("snippet", ch.get("content", "")),
                 score=float(ch.get("score", 1.0)),
                 metadata=ch.get("metadata", {}),

@@ -74,9 +74,9 @@ def compute_package_signature(
     timestamp_utc: str,
     key: str | bytes | None = None,
 ) -> str:
-    """Compute HMAC-SHA256 signature for evidence package provenance.
+    """Compute HMAC-SHA256 signature for evidence package provenance using canonical JSON.
 
-    Formula: HMAC-SHA256(key, f"{retrieval_id}:{tenant_id or ''}:{query_fingerprint}:{provenance_digest}:{timestamp_utc}")
+    Formula: HMAC-SHA256(key, canonical_json([retrieval_id, tenant_id, query_fingerprint, provenance_digest, timestamp_utc]))
     Returns empty string if key is not configured.
     """
     secret = key if key is not None else os.environ.get("KF_EVIDENCE_HMAC_KEY", "")
@@ -87,8 +87,26 @@ def compute_package_signature(
     else:
         secret_bytes = secret
     tenant = tenant_id or ""
-    msg = f"{retrieval_id}:{tenant}:{query_fingerprint}:{provenance_digest}:{timestamp_utc}".encode("utf-8")
+    msg = json.dumps(
+        [retrieval_id, tenant, query_fingerprint, provenance_digest, timestamp_utc],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
     return hmac.new(secret_bytes, msg, hashlib.sha256).hexdigest()
+
+
+def compute_query_fingerprint(
+    query_text: str,
+    tenant_id: str | None = None,
+    mode: str = "hybrid",
+) -> str:
+    """Compute deterministic SHA-256 fingerprint for a retrieval request.
+
+    Formula: SHA-256(canonical_json([tenant_id, query_text, mode]))
+    """
+    tenant = tenant_id if tenant_id is not None else ""
+    msg = json.dumps([tenant, query_text, mode], separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(msg).hexdigest()
 
 
 def verify_evidence_package(
@@ -252,8 +270,34 @@ def verify_evidence_package(
             digest_valid=False,
         )
 
-    # 5. Keyed HMAC Provenance Signature Verification (when HMAC key is configured)
+    # 5. Query Fingerprint Verification (when query_text is provided)
+    reported_fingerprint = str(package.get("query_fingerprint", ""))
+    query_text = str(package.get("query_text", ""))
+    tenant_val = str(package.get("tenant_id") or "")
+    mode_val = str(package.get("mode", "hybrid"))
+    if query_text and reported_fingerprint:
+        expected_fp = compute_query_fingerprint(query_text, tenant_id=tenant_val, mode=mode_val)
+        legacy_fp = hashlib.sha256(f"{tenant_val}:{query_text}:{mode_val}".encode("utf-8")).hexdigest()
+        if reported_fingerprint != expected_fp and reported_fingerprint != legacy_fp:
+            return VerificationResult(
+                is_valid=False,
+                error_reason="Query fingerprint mismatch: package query does not match reported fingerprint",
+                checked_chunks=len(chunks),
+                fingerprint_present=False,
+            )
+
+    # 6. Keyed HMAC Provenance Signature Verification (when HMAC key is configured or required)
     hmac_secret = hmac_key if hmac_key is not None else os.environ.get("KF_EVIDENCE_HMAC_KEY", "")
+    require_hmac = os.environ.get("FABRIC_REQUIRE_HMAC", "false").lower() in ("true", "1", "yes")
+
+    if require_hmac and not hmac_secret:
+        return VerificationResult(
+            is_valid=False,
+            error_reason="HMAC key is required in governed mode (FABRIC_REQUIRE_HMAC=true)",
+            checked_chunks=len(chunks),
+            signature_valid=False,
+        )
+
     if hmac_secret:
         reported_sig = str(package.get("package_signature", ""))
         if not reported_sig:
@@ -268,13 +312,20 @@ def verify_evidence_package(
         q_fingerprint = str(package.get("query_fingerprint", ""))
         expected_sig = compute_package_signature(
             retrieval_id=str(package.get("retrieval_id", "")),
-            tenant_id=str(package.get("tenant_id") or ""),
+            tenant_id=tenant_val,
             query_fingerprint=q_fingerprint,
             provenance_digest=reported_digest,
             timestamp_utc=str(package.get("timestamp_utc", "")),
             key=hmac_secret,
         )
-        if not hmac.compare_digest(reported_sig, expected_sig):
+        legacy_msg = f"{str(package.get('retrieval_id', ''))}:{tenant_val}:{q_fingerprint}:{reported_digest}:{str(package.get('timestamp_utc', ''))}".encode("utf-8")
+        legacy_sig = hmac.new(
+            hmac_secret.encode("utf-8") if isinstance(hmac_secret, str) else hmac_secret,
+            legacy_msg,
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not (hmac.compare_digest(reported_sig, expected_sig) or hmac.compare_digest(reported_sig, legacy_sig)):
             return VerificationResult(
                 is_valid=False,
                 error_reason="Invalid package_signature: HMAC verification failed",

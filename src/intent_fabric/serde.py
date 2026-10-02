@@ -37,7 +37,7 @@ def parse_evidence_package_reference(payload: dict[str, object]) -> EvidencePack
     items = [
         EvidenceItemReference(
             chunk_id=int(item["chunk_id"]),
-            document_uri=str(item["document_uri"]),
+            document_uri=str(item.get("source_uri") or item.get("document_uri") or ""),
             snippet=str(item["snippet"]),
             score=float(item["score"]),
             metadata=dict(item.get("metadata", {})),  # type: ignore[arg-type]

@@ -105,33 +105,6 @@ def create_mcp_server(tools: IntentFabricMCPTools | None = None) -> Any:
             max_age_seconds=max_age_seconds,
         )
 
-    orig_call_tool = getattr(server, "call_tool", None)
-
-    def _call_tool_wrapper(name: str, arguments: dict[str, Any] | None = None, **kwargs: Any) -> Any:
-        args = arguments if arguments is not None else kwargs
-        tool_mgr = getattr(server, "_tool_manager", None)
-        if tool_mgr and name in getattr(tool_mgr, "_tools", {}):
-            fn = tool_mgr._tools[name].fn
-            return fn(**args)
-        server_tools = getattr(server, "tools", None)
-        if isinstance(server_tools, dict) and name in server_tools:
-            return server_tools[name](**args)
-        local_tools = getattr(server, "_local_tools", None)
-        if isinstance(local_tools, dict) and name in local_tools:
-            return local_tools[name](**args)
-        if orig_call_tool is not None:
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                return orig_call_tool(name, args)
-            return asyncio.run(orig_call_tool(name, args))
-        raise KeyError(f"Tool '{name}' not found on MCP server")
-
-    setattr(server, "call_tool", _call_tool_wrapper)
-
     return server
 
 
