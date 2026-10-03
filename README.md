@@ -68,7 +68,7 @@ Enterprise engineering and security leaders want the productivity of autonomous 
 | **Binary All-or-Nothing Execution**: If an action is risky, the entire agent run crashes or blindly proceeds without oversight. | **Human-in-the-Loop Approval Packages**: Generates structured, tamper-evident approval requests (`requires_approval`) routed to human reviewers in Slack, Jira, or the Visual Admin Console. |
 | **Vulnerable to Indirect Prompt Injection**: Adversarial text hidden inside retrieved documents hijacks the agent's planning logic. | **XML Evidence Sandboxing**: Strict evidence boundaries (`<retrieved_evidence>`) isolate untrusted data from instructions, backed by syntax sanitization (`^[a-zA-Z0-9_.:-]{1,128}$`). |
 | **Non-Repudiation Failure**: No cryptographic proof of who authorized a production state mutation. | **HMAC-SHA256 Cryptographic Tokens**: Every human approval decision generates a signed, tamper-evident cryptographic token verified by execution adapters. |
-| **Vendor Lock-In**: Frameworks tie planning loops to proprietary cloud APIs. | **Local & Multi-Cloud Planner Support**: Runs locally and privately with Ollama (Llama 3, Mistral), with drop-in support for OpenAI, Gemini, and Azure AI Foundry. |
+| **Vendor Lock-In**: Frameworks tie planning loops to proprietary cloud APIs. | **Local & Multi-Cloud Planner Support**: Runs locally and privately with Ollama (Llama 3, Mistral), with drop-in support for OpenRouter (free tier & multi-model routing), OpenAI, Gemini, and Azure AI Foundry. |
 
 ---
 
@@ -290,11 +290,21 @@ Intent Fabric exposes planning and governance tools conforming to the open MCP s
 ---
 
 ## End-to-End Stack Integration
+ 
+Intent Fabric coordinates governance across the entire 5-repository Fabric ecosystem:
+1. **[Knowledge Fabric Enterprise Adapters](https://github.com/sagarv48/knowledge-fabric-enterprise-adapters)**: Ingests enterprise SaaS documents (Jira, Confluence, Notion) with automated secret scrubbing (DLP).
+2. **[Knowledge Fabric](https://github.com/sagarv48/knowledge-fabric)**: Slices content into structure-preserving chunks and compiles cryptographically digested `EvidencePackage`s.
+3. **[Canary Fabric](https://github.com/sagarv48/canary-fabric)**: Watermarks evidence chunks with invisible canary tripwires and guards step parameters via `IntentFabricCanaryGate` and `SlidingWindowStreamBuffer`.
+4. **Intent Fabric** *(this repository)*: Converts user intent + evidence into deterministic, policy-checked action plans with signed HMAC-SHA256 approvals.
+5. **[Unloop](https://github.com/sagarv48/unloop)**: Records the multi-turn execution trajectory in a SQLite WAL store, asserts loop-freedom with `OscillationWatchdog`, and enables time-travel playback.
 
-Intent Fabric sits at the center of the enterprise agent architecture:
-1. **[Knowledge Fabric](https://github.com/sagarv48/knowledge-fabric)**: Supplies verified ground-truth evidence packages.
-2. **Intent Fabric** *(this repository)*: Converts intent + evidence into deterministic, policy-checked action plans.
-3. **[Enterprise Adapters](https://github.com/sagarv48/knowledge-fabric-enterprise-adapters)**: Validates HMAC signatures and executes authorized actions against Jira, ServiceNow, Slack, or GitHub.
+The full cross-repo flow is continuously verified in [`tests/test_full_ecosystem_pipeline.py`](tests/test_full_ecosystem_pipeline.py).
+
+---
+
+## Two-Tier Data Architecture (Zero Live HTTP in Unit CI)
+- **Tier 1 (Golden Manifest Fixtures)**: Pre-recorded Kubernetes production deployments and AWS Terraform IaC manifests checked into `tests/fixtures/corpora/` for deterministic, sub-second CI policy evaluation.
+- **Tier 2 (Opt-in Live Harness)**: Live structured plan verification against OpenRouter (`benchmarks/live_planner_smoke_test.py --openrouter`).
 
 ---
 
