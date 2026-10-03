@@ -32,7 +32,7 @@ jobs:
       - name: Install Dependencies
         run: |
           uv venv
-          uv pip install pytest pydantic fastmcp
+          uv pip install pytest pytest-cov pydantic fastmcp
           if [ -f primary/pyproject.toml ]; then uv pip install -e ./primary; fi
           if [ -f sibling/pyproject.toml ]; then uv pip install -e ./sibling; fi
 
@@ -43,7 +43,7 @@ jobs:
       - name: Run Sibling Contract Tests
         run: |
           if [ -d sibling/tests ]; then
-            uv run pytest sibling/tests -k "contract or evidence" -v
+            uv run pytest sibling/tests -k "contract or evidence" -v --no-cov
           fi
 
       - name: Verify Cryptographic Hash Symmetry
