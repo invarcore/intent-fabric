@@ -79,4 +79,4 @@ def _action_type(action_name: str) -> str:
     normalized = action_name.strip().lower()
     if normalized in {"ticket_create", "document_update", "notification_send", "analysis_review"}:
         return normalized
-    return "analysis_review"
+    return normalized if normalized else "analysis_review"
