@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka-broker-cluster
+  namespace: prod-messaging
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: event-streaming-platform
+    app.kubernetes.io/tier: mission-critical
+spec:
+  serviceName: kafka-headless
+  replicas: 5
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9092"
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values: ["kafka"]
+              topologyKey: "topology.kubernetes.io/zone"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: kafka-broker
+          image: registry.enterprise.internal/infrastructure/kafka:3.8.0-distroless
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: plaintext
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          resources:
+            requests:
+              cpu: "4000m"
+              memory: "16Gi"
+            limits:
+              cpu: "8000m"
+              memory: "32Gi"
+          volumeMounts:
+            - name: datadir
+              mountPath: /var/lib/kafka/data
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 15
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: datadir
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3-encrypted
+        resources:
+          requests:
+            storage: 500Gi

@@ -36,7 +36,7 @@ from intent_fabric.models import (
     EvidencePackageReference,
     IntentRequest,
 )
-from intent_fabric.planning.llm import OpenAILLMPlanner
+from intent_fabric.planning.llm import OpenRouterLLMPlanner
 from intent_fabric.planning.rule_based import RuleBasedPlanner
 from intent_fabric.policies.engine import PolicyEngine
 from intent_fabric.simulation.executor import SimulationExecutor
@@ -188,9 +188,8 @@ def run_openrouter_smoke_test(model: str = "openrouter/free") -> bool:
         print("   Falling back to hermetic local verification...")
         return run_local_hermetic_smoke_test()
 
-    planner = OpenAILLMPlanner(
+    planner = OpenRouterLLMPlanner(
         model=model,
-        base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
     )
 

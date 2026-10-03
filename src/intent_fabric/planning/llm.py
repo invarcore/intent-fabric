@@ -253,6 +253,67 @@ class OpenAILLMPlanner:
         return _parse_llm_plan(raw_json, intent, evidence)
 
 
+class OpenRouterLLMPlanner:
+    """Calls the OpenRouter API to create AI-generated plans.
+
+    OpenRouter provides vendor-neutral routing across hundreds of foundation models
+    (OpenAI, Anthropic, Google, Meta, Mistral) via a single unified API.
+
+    Environment variables (required):
+        OPENROUTER_API_KEY
+        OPENROUTER_PLAN_MODEL    default: openai/gpt-4o-mini
+    """
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str = "https://openrouter.ai/api/v1",
+    ) -> None:
+        self._model = model
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+
+    @classmethod
+    def from_env(cls) -> OpenRouterLLMPlanner:
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            raise OSError("OPENROUTER_API_KEY environment variable is required")
+        return cls(
+            model=os.environ.get("OPENROUTER_PLAN_MODEL", "openai/gpt-4o-mini"),
+            api_key=api_key,
+        )
+
+    def create_plan(self, intent: IntentRequest, evidence: EvidencePackageReference) -> Plan:
+        user_message = _build_user_message(intent, evidence)
+        body = json.dumps(
+            {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.2,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self._base_url}/chat/completions",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_key}",
+                "HTTP-Referer": "https://github.com/sagarv48/intent-fabric",
+                "X-Title": "Intent Fabric Planning Engine",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        raw_json = result["choices"][0]["message"]["content"]
+        return _parse_llm_plan(raw_json, intent, evidence)
+
+
 class GeminiLLMPlanner:
     """Calls the Google Gemini API to create AI-generated plans.
 
@@ -396,6 +457,7 @@ class PlannerRegistry:
 
 PlannerRegistry.register("ollama", OllamaLLMPlanner.from_env)
 PlannerRegistry.register("openai", OpenAILLMPlanner.from_env)
+PlannerRegistry.register("openrouter", OpenRouterLLMPlanner.from_env)
 PlannerRegistry.register("gemini", GeminiLLMPlanner.from_env)
 PlannerRegistry.register("foundry", FoundryLocalLLMPlanner.from_env)
 

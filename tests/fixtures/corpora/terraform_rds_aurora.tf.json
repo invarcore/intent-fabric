@@ -1,0 +1,38 @@
+{
+  "resource": {
+    "aws_rds_cluster": {
+      "aurora_cluster": {
+        "cluster_identifier": "prod-ledger-aurora-cluster",
+        "engine": "aurora-postgresql",
+        "engine_version": "16.2",
+        "database_name": "ledger_prod",
+        "master_username": "dbadmin",
+        "manage_master_user_password": true,
+        "master_user_secret_kms_key_id": "arn:aws:kms:us-east-1:123456789012:key/ledger-kms-cmek",
+        "backup_retention_period": 35,
+        "preferred_backup_window": "02:00-03:00",
+        "preferred_maintenance_window": "sun:04:00-sun:05:00",
+        "storage_encrypted": true,
+        "kms_key_id": "arn:aws:kms:us-east-1:123456789012:key/ledger-kms-cmek",
+        "deletion_protection": true,
+        "copy_tags_to_snapshot": true,
+        "skip_final_snapshot": false,
+        "final_snapshot_identifier": "prod-ledger-final-snapshot",
+        "vpc_security_group_ids": ["sg-0a1b2c3d4e5f67890"],
+        "db_subnet_group_name": "prod-db-isolated-subnet-group"
+      }
+    },
+    "aws_rds_cluster_instance": {
+      "aurora_instances": {
+        "count": 3,
+        "identifier": "prod-ledger-instance-${count.index}",
+        "cluster_identifier": "${aws_rds_cluster.aurora_cluster.id}",
+        "instance_class": "db.r6g.2xlarge",
+        "engine": "aurora-postgresql",
+        "engine_version": "16.2",
+        "auto_minor_version_upgrade": false,
+        "publicly_accessible": false
+      }
+    }
+  }
+}
