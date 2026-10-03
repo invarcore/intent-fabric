@@ -20,11 +20,22 @@ if _adapters_path.exists() and str(_adapters_path) not in sys.path:
     sys.path.insert(0, str(_adapters_path))
 
 from intent_fabric.mcp.tools import IntentFabricMCPTools
-from intent_fabric.models import PolicyDecisionType
-from enterprise_adapters.execution import ApprovedRuntimeActionAdapter
-from enterprise_adapters.policy import PolicyDecision as AdapterPolicyDecision, PolicyDecisionType as AdapterPolicyDecisionType
+
+try:
+    from enterprise_adapters.execution import ApprovedRuntimeActionAdapter
+    from enterprise_adapters.policy import (
+        PolicyDecision as AdapterPolicyDecision,
+        PolicyDecisionType as AdapterPolicyDecisionType,
+    )
+    HAS_ENTERPRISE_ADAPTERS = True
+except ImportError:
+    HAS_ENTERPRISE_ADAPTERS = False
+    ApprovedRuntimeActionAdapter = None  # type: ignore[assignment, misc]
+    AdapterPolicyDecision = None  # type: ignore[assignment, misc]
+    AdapterPolicyDecisionType = None  # type: ignore[assignment, misc]
 
 
+@pytest.mark.skipif(not HAS_ENTERPRISE_ADAPTERS, reason="enterprise-adapters not installed")
 def test_cross_repo_governance_lifecycle_end_to_end() -> None:
     """Validate full flow across Knowledge Fabric evidence, Intent planning, and Adapter execution."""
     # 1. Evidence package retrieved from Knowledge Fabric
