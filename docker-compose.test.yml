@@ -1,0 +1,20 @@
+services:
+  test-suite:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: intent-fabric-test-suite
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["uv", "run", "pytest", "--cov=intent_fabric", "--cov-report=term-missing", "--cov-fail-under=90"]
+
+  smoke-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: intent-fabric-smoke-test
+    depends_on:
+      - test-suite
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["uv", "run", "python", "benchmarks/live_planner_smoke_test.py"]

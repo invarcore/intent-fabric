@@ -298,6 +298,26 @@ Intent Fabric sits at the center of the enterprise agent architecture:
 
 ---
 
+## 🧪 Testing & Verification
+
+Intent Fabric maintains strict test coverage (**>=90% enforced**) and hermetic containerized test verification:
+
+```bash
+# 1. Run full test suite with coverage
+uv run pytest --cov=intent_fabric --cov-report=term-missing --cov-fail-under=90
+
+# 2. Run local hermetic end-to-end governance smoke test (<2ms)
+uv run python benchmarks/live_planner_smoke_test.py
+
+# 3. Optional: Run live structured plan verification against OpenRouter Free Tier
+uv run python benchmarks/live_planner_smoke_test.py --openrouter --model openrouter/free
+
+# 4. Run hermetic containerized test suite via Docker Compose
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
+```
+
+---
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
