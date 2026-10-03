@@ -339,8 +339,12 @@ def test_policy_loader_env_and_exceptions(tmp_path, monkeypatch):
     assert len(loader_corrupt.get().rules) > 1  # Loaded default rules
 
     # OSError on stat keeps last loaded
-    with patch.object(Path, "stat", side_effect=OSError("Disk error")):
-        assert loader_env.get() is not None
+    mock_path = MagicMock(spec=Path)
+    mock_path.exists.return_value = True
+    mock_path.stat.side_effect = OSError("Disk error")
+    loader_with_mock = PolicyRuleLoader()
+    loader_with_mock._path = mock_path
+    assert loader_with_mock.get() is not None
 
 
 def test_is_valid_action_syntax_options(monkeypatch):
