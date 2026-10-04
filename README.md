@@ -10,11 +10,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sagarv48/intent-fabric/actions"><img src="https://github.com/sagarv48/intent-fabric/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="https://github.com/sagarv48/intent-fabric/releases"><img src="https://img.shields.io/badge/Release-v0.1.1-blue.svg" alt="Release"></a>
+  <a href="https://github.com/invarcore/intent-fabric/actions"><img src="https://github.com/invarcore/intent-fabric/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://github.com/invarcore/intent-fabric/releases"><img src="https://img.shields.io/badge/Release-v0.1.1-blue.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Native%20Server-purple.svg" alt="MCP Native"></a>
-  <a href="https://github.com/sagarv48/knowledge-fabric"><img src="https://img.shields.io/badge/Ecosystem-Knowledge%20Fabric-9B51E0.svg" alt="Knowledge Fabric"></a>
+  <a href="https://github.com/invarcore/knowledge-fabric"><img src="https://img.shields.io/badge/Ecosystem-Knowledge%20Fabric-9B51E0.svg" alt="Knowledge Fabric"></a>
 </p>
 
 ---
@@ -292,11 +292,11 @@ Intent Fabric exposes planning and governance tools conforming to the open MCP s
 ## End-to-End Stack Integration
  
 Intent Fabric coordinates governance across the entire 5-repository Fabric ecosystem:
-1. **[Knowledge Fabric Enterprise Adapters](https://github.com/sagarv48/knowledge-fabric-enterprise-adapters)**: Ingests enterprise SaaS documents (Jira, Confluence, Notion) with automated secret scrubbing (DLP).
-2. **[Knowledge Fabric](https://github.com/sagarv48/knowledge-fabric)**: Slices content into structure-preserving chunks and compiles cryptographically digested `EvidencePackage`s.
-3. **[Canary Fabric](https://github.com/sagarv48/canary-fabric)**: Watermarks evidence chunks with invisible canary tripwires and guards step parameters via `IntentFabricCanaryGate` and `SlidingWindowStreamBuffer`.
+1. **[Knowledge Fabric Enterprise Adapters](https://github.com/invarcore/knowledge-fabric-enterprise-adapters)**: Ingests enterprise SaaS documents (Jira, Confluence, Notion) with automated secret scrubbing (DLP).
+2. **[Knowledge Fabric](https://github.com/invarcore/knowledge-fabric)**: Slices content into structure-preserving chunks and compiles cryptographically digested `EvidencePackage`s.
+3. **[Canary Fabric](https://github.com/invarcore/canary-fabric)**: Watermarks evidence chunks with invisible canary tripwires and guards step parameters via `IntentFabricCanaryGate` and `SlidingWindowStreamBuffer`.
 4. **Intent Fabric** *(this repository)*: Converts user intent + evidence into deterministic, policy-checked action plans with signed HMAC-SHA256 approvals.
-5. **[Unloop](https://github.com/sagarv48/unloop)**: Records the multi-turn execution trajectory in a SQLite WAL store, asserts loop-freedom with `OscillationWatchdog`, and enables time-travel playback.
+5. **[Unloop](https://github.com/invarcore/unloop)**: Records the multi-turn execution trajectory in a SQLite WAL store, asserts loop-freedom with `OscillationWatchdog`, and enables time-travel playback.
 
 The full cross-repo flow is continuously verified in [`tests/test_full_ecosystem_pipeline.py`](tests/test_full_ecosystem_pipeline.py).
 
