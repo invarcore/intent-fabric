@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Cryptographic signing and verification for human-in-the-loop approvals.
 
 Provides symmetric authentication and integrity verification to prevent approval

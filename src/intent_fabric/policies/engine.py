@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Policy engine for plan validation — YAML-driven, extensible."""
 
 from __future__ import annotations

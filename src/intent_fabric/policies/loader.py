@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """YAML-driven policy rule loader with hot-reload support."""
 
 from __future__ import annotations

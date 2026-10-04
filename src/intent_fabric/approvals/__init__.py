@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Approval package generation and cryptographic signing."""
 
 from intent_fabric.approvals.generator import ApprovalPackageGenerator

@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Planning layer."""
 
 from intent_fabric.planning.interfaces import Planner

@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Evidence provenance verifier for Knowledge Fabric → Intent Fabric contract.
 
 Re-computes SHA-256 hashes independently using RFC 8785 canonical JSON serialization

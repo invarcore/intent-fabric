@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Action contract schema and evidence provenance verification."""
 
 from intent_fabric.contracts.evidence_verifier import (

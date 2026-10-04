@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Policy rule data model for YAML-configurable policy evaluation."""
 
 from __future__ import annotations

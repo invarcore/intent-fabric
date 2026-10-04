@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP planning tool surface."""
 
 from intent_fabric.mcp.schema import MCP_SCHEMA_VERSION

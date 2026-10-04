@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """MCP-style tools for intent planning and simulation."""
 
 from __future__ import annotations

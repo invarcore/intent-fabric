@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Governed Policy Executor Pipeline.
 
 Ingests an EvidencePackage, validates cryptographic hashes and freshness,

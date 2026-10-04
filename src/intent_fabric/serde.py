@@ -1,3 +1,6 @@
+# Copyright 2026 Invarcore Organization
+# SPDX-License-Identifier: Apache-2.0
+
 """Model serialization and parsing helpers."""
 
 from __future__ import annotations
