@@ -13,7 +13,7 @@ Thank you for contributing to Intent Fabric! We appreciate your help in building
 
 ### 2. Setup Virtual Environment
 ```bash
-git clone https://github.com/sagarv48/intent-fabric.git
+git clone https://github.com/invarcore/intent-fabric.git
 cd intent-fabric
 
 python3 -m venv .venv

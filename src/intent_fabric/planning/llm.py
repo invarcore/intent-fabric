@@ -306,7 +306,7 @@ class OpenRouterLLMPlanner:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._api_key}",
-                "HTTP-Referer": "https://github.com/sagarv48/intent-fabric",
+                "HTTP-Referer": "https://github.com/invarcore/intent-fabric",
                 "X-Title": "Intent Fabric Planning Engine",
             },
             method="POST",
