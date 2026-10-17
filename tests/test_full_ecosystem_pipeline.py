@@ -37,44 +37,54 @@ for _repo, _src in [
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-# 1. Enterprise Adapters
-from enterprise_adapters.content_sanitizer import sanitize_document_content
-from enterprise_adapters.execution import (
-    ApprovedRuntimeActionAdapter,
-    ExecutionEnvelope,
-    ExecutionStatus,
-    dispatch_with_readback,
-)
-from enterprise_adapters.policy import (
-    PolicyDecision as AdapterPolicyDecision,
-    PolicyDecisionType as AdapterPolicyDecisionType,
-)
-
-# 2. Knowledge Fabric
-from knowledge_fabric.chunking.service import DocumentChunkingService
-from knowledge_fabric.evidence.models import (
-    EvidenceItem,
-    EvidencePackage,
-    compute_chunk_hash,
-    compute_package_digest,
-)
-from knowledge_fabric.ingestion.models import Document, SourceFormat
-
-# 3. Canary Fabric
-from canary_fabric.adapters.intent_fabric import IntentFabricCanaryGate
-from canary_fabric.adapters.knowledge_fabric import KnowledgeFabricCanaryAdapter
-from canary_fabric.breaker.circuit import CircuitBreaker
-from canary_fabric.core.honeytoken import Honeytoken, HoneytokenRegistry, HoneytokenType
-from canary_fabric.proxy.streamer import SlidingWindowStreamBuffer
-
-# 4. Intent Fabric
+# 4. Intent Fabric (Always available within repository)
 from intent_fabric.mcp.tools import IntentFabricMCPTools
 
-# 5. Unloop
-from unloop.protocol.models import ToolInvocationRecord, TurnSnapshot
-from unloop.runtime.interceptor import UnloopSession
-from unloop.runtime.watchdog import OscillationWatchdog
-from unloop.storage.db import UnloopStore
+try:
+    # 1. Enterprise Adapters
+    from enterprise_adapters.content_sanitizer import sanitize_document_content
+    from enterprise_adapters.execution import (
+        ApprovedRuntimeActionAdapter,
+        ExecutionEnvelope,
+        ExecutionStatus,
+        dispatch_with_readback,
+    )
+    from enterprise_adapters.policy import (
+        PolicyDecision as AdapterPolicyDecision,
+        PolicyDecisionType as AdapterPolicyDecisionType,
+    )
+
+    # 2. Knowledge Fabric
+    from knowledge_fabric.chunking.service import DocumentChunkingService
+    from knowledge_fabric.evidence.models import (
+        EvidenceItem,
+        EvidencePackage,
+        compute_chunk_hash,
+        compute_package_digest,
+    )
+    from knowledge_fabric.ingestion.models import Document, SourceFormat
+
+    # 3. Canary Fabric
+    from canary_fabric.adapters.intent_fabric import IntentFabricCanaryGate
+    from canary_fabric.adapters.knowledge_fabric import KnowledgeFabricCanaryAdapter
+    from canary_fabric.breaker.circuit import CircuitBreaker
+    from canary_fabric.core.honeytoken import Honeytoken, HoneytokenRegistry, HoneytokenType
+    from canary_fabric.proxy.streamer import SlidingWindowStreamBuffer
+
+    # 5. Unloop
+    from unloop.protocol.models import ToolInvocationRecord, TurnSnapshot
+    from unloop.runtime.interceptor import UnloopSession
+    from unloop.runtime.watchdog import OscillationWatchdog
+    from unloop.storage.db import UnloopStore
+
+    HAS_FULL_ECOSYSTEM = True
+except ImportError:
+    HAS_FULL_ECOSYSTEM = False
+
+pytestmark = pytest.mark.skipif(
+    not HAS_FULL_ECOSYSTEM,
+    reason="Full ecosystem repositories (canary-fabric, knowledge-fabric, enterprise-adapters, unloop) not available in environment",
+)
 
 
 def test_full_ecosystem_happy_path_pipeline() -> None:
