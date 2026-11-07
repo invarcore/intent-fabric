@@ -91,3 +91,4 @@ def verify_evidence_package(
     if not hmac.compare_digest(expected_mac.lower(), signature.strip().lower()):
         raise VerificationError("Provenance HMAC verification failed.")
     return True
+
