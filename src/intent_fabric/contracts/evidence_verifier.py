@@ -60,13 +60,19 @@ def compute_chunk_hash(source_uri: str, content: str) -> str:
 def compute_package_digest(chunk_hashes: list[str]) -> str:
     """Compute composite SHA-256 digest over ordered chunk hashes.
 
-    Formula: SHA-256(hash_1 + ":" + hash_2 + ":" + ... + hash_N)
-    Returns empty string if chunk_hashes list is empty.
+    Uses length-prefixed encoding per RFC 8785 to eliminate delimiter collision attacks.
+    Each hash is prefixed with its byte length as a 4-byte big-endian unsigned integer.
     """
     if not chunk_hashes:
         return ""
-    combined = ":".join(chunk_hashes).encode("utf-8")
-    return hashlib.sha256(combined).hexdigest()
+    import struct
+
+    parts: list[bytes] = []
+    for h in chunk_hashes:
+        h_bytes = h.encode("utf-8")
+        parts.append(struct.pack(">I", len(h_bytes)))
+        parts.append(h_bytes)
+    return hashlib.sha256(b"".join(parts)).hexdigest()
 
 
 def compute_package_signature(
@@ -280,8 +286,7 @@ def verify_evidence_package(
     mode_val = str(package.get("mode", "hybrid"))
     if query_text and reported_fingerprint:
         expected_fp = compute_query_fingerprint(query_text, tenant_id=tenant_val, mode=mode_val)
-        legacy_fp = hashlib.sha256(f"{tenant_val}:{query_text}:{mode_val}".encode("utf-8")).hexdigest()
-        if reported_fingerprint != expected_fp and reported_fingerprint != legacy_fp:
+        if reported_fingerprint != expected_fp:
             return VerificationResult(
                 is_valid=False,
                 error_reason="Query fingerprint mismatch: package query does not match reported fingerprint",
@@ -321,14 +326,7 @@ def verify_evidence_package(
             timestamp_utc=str(package.get("timestamp_utc", "")),
             key=hmac_secret,
         )
-        legacy_msg = f"{str(package.get('retrieval_id', ''))}:{tenant_val}:{q_fingerprint}:{reported_digest}:{str(package.get('timestamp_utc', ''))}".encode("utf-8")
-        legacy_sig = hmac.new(
-            hmac_secret.encode("utf-8") if isinstance(hmac_secret, str) else hmac_secret,
-            legacy_msg,
-            hashlib.sha256,
-        ).hexdigest()
-
-        if not (hmac.compare_digest(reported_sig, expected_sig) or hmac.compare_digest(reported_sig, legacy_sig)):
+        if not hmac.compare_digest(reported_sig, expected_sig):
             return VerificationResult(
                 is_valid=False,
                 error_reason="Invalid package_signature: HMAC verification failed",

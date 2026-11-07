@@ -258,4 +258,38 @@ def test_query_fingerprint_mismatch_fails():
     assert "Query fingerprint mismatch" in (result.error_reason or "")
 
 
+def test_legacy_colon_signature_rejected():
+    """Colon-delimited legacy HMAC signatures are rejected by the strict verifier."""
+    import hashlib as py_hashlib
+    import hmac as py_hmac
+
+    package = _make_valid_package()
+    key = "secret-test-hmac-key"
+    package["query_fingerprint"] = "fingerprint-123"
+
+    tenant_val = str(package.get("tenant_id") or "")
+    q_fp = str(package.get("query_fingerprint", ""))
+    rep_digest = str(package.get("provenance_digest", ""))
+    ts = str(package.get("timestamp_utc", ""))
+    legacy_msg = f"{package['retrieval_id']}:{tenant_val}:{q_fp}:{rep_digest}:{ts}".encode("utf-8")
+    package["package_signature"] = py_hmac.new(key.encode("utf-8"), legacy_msg, py_hashlib.sha256).hexdigest()
+
+    result = verify_evidence_package(package, hmac_key=key)
+    assert result.is_valid is False
+    assert result.signature_valid is False
+    assert "HMAC verification failed" in (result.error_reason or "")
+
+
+def test_document_uri_alias_accepted():
+    """A chunk specifying document_uri without source_uri passes verification cleanly."""
+    package = _make_valid_package()
+    for chunk in package["chunks"]:
+        chunk["document_uri"] = chunk.pop("source_uri")
+
+    result = verify_evidence_package(package)
+    assert result.is_valid is True
+    assert result.error_reason is None
+    assert result.checked_chunks == len(package["chunks"])
+
+
 
