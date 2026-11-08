@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/invarcore/intent-fabric/actions"><img src="https://github.com/invarcore/intent-fabric/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
   <a href="https://invarcore.com"><img src="https://img.shields.io/badge/Website-invarcore.com-0284C7?logo=googlechrome&logoColor=white" alt="Invarcore Website"></a>
-  <a href="https://github.com/invarcore/intent-fabric/releases"><img src="https://img.shields.io/badge/Release-v0.1.1-blue.svg" alt="Release"></a>
+  <a href="https://github.com/invarcore/intent-fabric/releases"><img src="https://img.shields.io/badge/Release-v0.2.0-blue.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Native%20Server-purple.svg" alt="MCP Native"></a>
   <a href="https://github.com/invarcore/knowledge-fabric"><img src="https://img.shields.io/badge/Ecosystem-Knowledge%20Fabric-9B51E0.svg" alt="Knowledge Fabric"></a>
@@ -141,6 +141,105 @@ When an action requires human review, Intent Fabric generates a structured `Appr
 ```
 
 Downstream enterprise execution adapters verify this cryptographic token before committing any mutative state changes, guaranteeing full auditability and non-repudiation for SOC 2 Type II compliance.
+
+---
+
+## 🔒 OWASP ASI07: Inter-Agent Cryptographic Delegation & Replay Nonce Ledger
+
+In multi-agent collaborative workflows, autonomous agents invoke tools and subagents on behalf of other agents. Without cryptographic delegation, agents are vulnerable to **OWASP ASI07 (Insecure Inter-Agent Communication & Impersonation)**, where a compromised subagent forges task requests or replays stale authorization envelopes.
+
+`intent-fabric` provides tamper-evident, HMAC-SHA256 inter-agent authorization envelopes with bounded-capacity replay protection:
+
+```python
+from intent_fabric.inter_agent_envelope import (
+    mint_inter_agent_envelope,
+    verify_inter_agent_envelope,
+    ReplayNonceLedger,
+    InterAgentAuthError,
+)
+
+SECRET = "production-hmac-shared-secret-key"
+ledger = ReplayNonceLedger(capacity=10000)
+
+# 1. Primary agent mints a cryptographically signed envelope
+envelope_bytes = mint_inter_agent_envelope(
+    secret=SECRET,
+    sender_agent_id="coordinator_agent_01",
+    recipient_agent_id="executor_agent_02",
+    action="database_backup",
+    arguments={"target": "s3://backups/prod", "retention_days": 30},
+    valid_for_seconds=60,
+)
+
+# 2. Receiving agent verifies signature, sender/recipient, freshness, and nonce replay
+verified_envelope = verify_inter_agent_envelope(
+    secret=SECRET,
+    envelope_bytes=envelope_bytes,
+    expected_recipient="executor_agent_02",
+    expected_sender="coordinator_agent_01",
+    clock_skew_tolerance=5.0,  # 5s future clock skew protection
+    nonce_ledger=ledger,
+)
+print(f"Action authorized: {verified_envelope.action} with arguments {verified_envelope.arguments}")
+
+# 3. An attacker replaying the exact same envelope is rejected fail-closed
+try:
+    verify_inter_agent_envelope(
+        secret=SECRET,
+        envelope_bytes=envelope_bytes,
+        expected_recipient="executor_agent_02",
+        nonce_ledger=ledger,
+    )
+except InterAgentAuthError as e:
+    print(f"Replay attack blocked: {e}")
+```
+
+### Delegation Invariants
+- **Freshness Window**: Envelopes expire after $\Delta t \le 60\text{s}$ (configurable).
+- **Clock Skew Defense**: Future timestamps $>5.0\text{s}$ ahead of receiver wall-clock are rejected fail-closed.
+- **Flood-Hardened Nonce Ledger**: `ReplayNonceLedger` evicts expired entries first; if flooded with unexpired nonces exceeding its bounded capacity, it fails closed with `InterAgentAuthError` rather than silently dropping active nonces, eliminating the FIFO eviction-induced replay loophole.
+
+---
+
+## ✍️ OverrideDelta & Human-in-the-Loop Policy Synthesis
+
+When human reviewers modify agent-generated parameters (e.g. reducing a refund amount from \$500 to \$100, or constraining a CIDR block), `intent-fabric` captures this delta as an `OverrideDelta` and automatically synthesizes reusable declarative YAML policies and JSON Schema Draft 2020-12 rules:
+
+```python
+from intent_fabric.override_delta import OverrideDelta, synthesize_intent_policy
+
+# 1. Track parameter deviations between agent proposal and human approval
+delta = OverrideDelta(
+    action="issue_refund",
+    original_parameters={"user_id": "usr_991", "amount": 500.0, "currency": "USD"},
+    approved_parameters={"user_id": "usr_991", "amount": 100.0, "currency": "USD"},
+    reviewer="compliance_lead@company.com",
+    justification="Tier-1 autonomous refund ceiling is $100.00",
+)
+
+# 2. Synthesize declarative YAML policy rule and JSON Schema constraint
+synthesized_yaml = synthesize_intent_policy(
+    delta,
+    rule_name="auto_synthesized_refund_ceiling",
+    priority=80,
+)
+print(synthesized_yaml)
+```
+
+Generated policy output:
+```yaml
+# Auto-synthesized from human override by compliance_lead@company.com
+rules:
+  - name: auto_synthesized_refund_ceiling
+    action_pattern: "issue_refund"
+    decision: "requires_approval"
+    priority: 80
+    conditions:
+      amount:
+        operator: "gt"
+        value: 100.0
+    reason: "Tier-1 autonomous refund ceiling is $100.00"
+```
 
 ---
 
