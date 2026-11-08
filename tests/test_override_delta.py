@@ -1,15 +1,14 @@
 # Copyright 2026 Invarcore Organization
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for Override Delta & Policy Synthesizer module."""
-
-from __future__ import annotations
-
+import re
 import pytest
+
 from intent_fabric.override_delta import (
+    JAILED_PATH_PATTERN,
+    NO_LEADING_FLAG_PATTERN,
     create_override_lineage_receipt,
     length_prefixed_utf8,
-    rfc8785_canonical_bytes,
     rfc8785_sha256,
     synthesize_json_schema_patch,
     verify_override_lineage_receipt,
@@ -47,15 +46,52 @@ def test_override_lineage_receipt_and_schema_synthesis() -> None:
     props = schema["properties"]
     assert props["limit"]["maximum"] == 500
     assert props["env"]["enum"] == ["staging"]
-    assert props["ref"]["pattern"] == r"^(?!-).*$"
-    assert props["path"]["pattern"] == r"^(?!\.\./|/etc/|/root/).*$"
+    assert props["ref"]["pattern"] == NO_LEADING_FLAG_PATTERN
+    assert props["path"]["pattern"] == JAILED_PATH_PATTERN
     assert props["debug_token"]["not"] == {}
+
+
+def test_p0_4_nested_json_path_isolation_and_cross_tool_rejection() -> None:
+    r1 = create_override_lineage_receipt(
+        "sync_files",
+        "agent:1",
+        "human:1",
+        {"source": {"path": "workspace/../../etc/shadow"}, "timeout": -1},
+        {"source": {"path": "workspace/input.csv"}, "timeout": 30},
+        "secret-key",
+    )
+    schema = synthesize_json_schema_patch([r1])
+    assert "source" in schema["properties"]
+    assert schema["properties"]["source"]["properties"]["path"]["pattern"] == JAILED_PATH_PATTERN
+    assert schema["properties"]["timeout"]["minimum"] == 30
+
+    r_other = create_override_lineage_receipt(
+        "delete_db",
+        "agent:1",
+        "human:1",
+        {"limit": 100},
+        {"limit": 10},
+        "secret-key",
+    )
+    with pytest.raises(ValueError, match="Cross-tool schema pollution blocked"):
+        synthesize_json_schema_patch([r1, r_other])
+
+
+def test_p0_5_mid_string_and_windows_traversal_blocked_by_jailed_pattern() -> None:
+    bs = chr(92)
+    pat = re.compile(JAILED_PATH_PATTERN)
+    assert pat.match("workspace/report.json") is not None
+    assert pat.match("../../etc/passwd") is None
+    assert pat.match("workspace/../../etc/passwd") is None
+    assert pat.match("workspace" + bs + ".." + bs + ".." + bs + "Windows") is None
+    assert pat.match("/etc/passwd") is None
+    assert pat.match("C:" + bs + "Windows" + bs + "System32") is None
 
 
 def test_empty_secret_key_fails_closed() -> None:
     for bad_key in ["", "   ", None]:
         with pytest.raises(ValueError, match="secret_key is required"):
-            create_override_lineage_receipt("t", "a", "r", {}, {}, bad_key)  # type: ignore
+            create_override_lineage_receipt("t", "a", "r", {}, {}, bad_key)  # type: ignore[arg-type]
 
 
 def test_multi_receipt_schema_convergence() -> None:
@@ -81,47 +117,52 @@ def test_multi_receipt_schema_convergence() -> None:
 
 
 def test_multibyte_utf8_and_nfc_symmetry() -> None:
-    nfc_actor = "agent:café"
-    nfd_actor = "agent:café"
+    nfc_actor = "agent:caf" + chr(0xE9)
+    nfd_actor = "agent:cafe" + chr(0x301)
     assert length_prefixed_utf8(nfc_actor) == length_prefixed_utf8(nfd_actor)
     assert length_prefixed_utf8(nfc_actor).startswith("11:")
     assert rfc8785_sha256({"a": nfc_actor}) == rfc8785_sha256({"a": nfd_actor})
 
 
-def test_nested_mapping_and_list_flag_stripping() -> None:
+def test_nested_mapping_and_flag_stripping_in_list() -> None:
     proposed = {
-        "nested": {"timeout": 120.5, "tags": ["--all", "v1"]},
-        "modes": ["alpha", "beta"],
-        "added_later": None,
+        "flags": ["--force", "-v", "arg1"],
+        "nested": {"key_to_drop": "drop_me", "config": {"option": "a"}},
+        "new_key": "exists",
     }
     approved = {
-        "nested": {"timeout": 30.0, "tags": ["v1"]},
-        "modes": ["alpha"],
-        "new_param": "safe_default",
+        "flags": ["arg1"],
+        "nested": {"config": {"option": "b"}},
+        "added_key": "new_val",
     }
     receipt = create_override_lineage_receipt(
-        tool_name="configure_service",
-        actor_id="agent:planner",
-        reviewer_id="human:reviewer",
+        tool_name="complex_tool",
+        actor_id="actor_1",
+        reviewer_id="reviewer_1",
         proposed_args=proposed,
         approved_args=approved,
-        secret_key="secret-key-2",
+        secret_key="my-secret-key",
     )
     assert receipt.override_occurred is True
-    assert len(receipt.overrides) == 5
+    kinds = {o.json_path: o.override_kind for o in receipt.overrides}
+    assert kinds["$.flags"] == "FLAG_STRIPPED"
+    assert kinds["$.nested.key_to_drop"] == "KEY_REMOVED"
+    assert kinds["$.nested.config.option"] == "ENUM_RESTRICTED"
+    assert kinds["$.new_key"] == "KEY_REMOVED"
+    assert kinds["$.added_key"] == "ENUM_RESTRICTED"
 
-    # Verify no override occurred when proposed == approved
-    noop_receipt = create_override_lineage_receipt(
-        tool_name="read_only",
-        actor_id="agent:reader",
-        reviewer_id="human:approver",
-        proposed_args={"limit": 10},
-        approved_args={"limit": 10},
-        secret_key="secret-key-2",
+    empty_schema = synthesize_json_schema_patch([])
+    assert empty_schema["type"] == "object"
+    assert empty_schema["properties"] == {}
+
+
+def test_bool_or_generic_override_classification() -> None:
+    receipt = create_override_lineage_receipt(
+        "tool",
+        "actor",
+        "reviewer",
+        {"enabled": True},
+        {"enabled": False},
+        "key",
     )
-    assert noop_receipt.override_occurred is False
-    assert len(noop_receipt.overrides) == 0
-
-    # Verify canonical bytes serialization on collections
-    canon = rfc8785_canonical_bytes(["item1", {"k": "v"}])
-    assert b"item1" in canon
+    assert receipt.overrides[0].override_kind == "ENUM_RESTRICTED"

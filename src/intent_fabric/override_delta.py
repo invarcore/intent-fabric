@@ -1,7 +1,7 @@
 # Copyright 2026 Invarcore Organization
 # SPDX-License-Identifier: Apache-2.0
 
-"""Override Delta & Policy Synthesizer module for human override lineage."""
+"""Hardened Override Lineage & JSON Schema Policy Synthesizer (v2)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,18 @@ import operator
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+_PIPE = chr(124)
+_BS = chr(92)
+_DOT = _BS + "."
+_ESC_BS = _BS + _BS
+NO_LEADING_FLAG_PATTERN = r"^(?!-).*$"
+JAILED_PATH_PATTERN = (
+    "^(?!.*(?:^" + _PIPE + "/" + _PIPE + _ESC_BS + ")"
+    + _DOT + _DOT
+    + "(?:$" + _PIPE + "/" + _PIPE + _ESC_BS + "))"
+    + "(?!/)(?![A-Za-z]:).*$"
+)
 
 
 def nfc_normalize(value: str) -> str:
@@ -80,14 +92,27 @@ def _validate_secret_key(secret_key: Optional[str]) -> bytes:
     return nfc_normalize(secret_key).encode("utf-8")
 
 
+def _has_traversal_or_abs(val: str) -> bool:
+    norm = val.replace(_BS, "/")
+    segments = [s for s in norm.split("/") if s]
+    return ".." in segments or norm.startswith("/") or (operator.gt(len(norm), 1) and norm[1] == ":")
+
+
 def _classify_parameter_override(path: str, prop: Any, appr: Any) -> ParameterOverrideEntry:
-    if isinstance(prop, (int, float)) and isinstance(appr, (int, float)) and not isinstance(prop, bool):
+    if (
+        isinstance(prop, (int, float))
+        and isinstance(appr, (int, float))
+        and not isinstance(prop, bool)
+        and not isinstance(appr, bool)
+    ):
         if operator.lt(appr, prop):
             return ParameterOverrideEntry(path, "VALUE_CLAMPED", prop, appr)
+        if operator.gt(appr, prop) and operator.le(prop, 0):
+            return ParameterOverrideEntry(path, "VALUE_RAISED_MIN", prop, appr)
     if isinstance(prop, str) and isinstance(appr, str):
         if prop.startswith("-") and not appr.startswith("-"):
             return ParameterOverrideEntry(path, "FLAG_STRIPPED", prop, appr)
-        if (".." in prop or prop.startswith("/")) and ".." not in appr:
+        if _has_traversal_or_abs(prop) and not _has_traversal_or_abs(appr):
             return ParameterOverrideEntry(path, "PATH_JAILED", prop, appr)
         return ParameterOverrideEntry(path, "ENUM_RESTRICTED", prop, appr)
     if isinstance(prop, list) and isinstance(appr, list):
@@ -115,7 +140,7 @@ def compute_override_entries(
             p_val, a_val = proposed[key], approved[key]
             if isinstance(p_val, Mapping) and isinstance(a_val, Mapping):
                 entries.extend(compute_override_entries(p_val, a_val, prefix=path))
-            elif p_val != a_val:
+            elif p_val != a_val or type(p_val) is not type(a_val):
                 entries.append(_classify_parameter_override(path, p_val, a_val))
     return tuple(entries)
 
@@ -148,7 +173,7 @@ def create_override_lineage_receipt(
         "proposed_args_digest": prop_digest,
         "reviewer_id": length_prefixed_utf8(reviewer_id),
         "tool_name": length_prefixed_utf8(tool_name),
-        "v": "intent-fabric-override-v1",
+        "v": "intent-fabric-override-v2",
     }
     canon_bytes = rfc8785_canonical_bytes(canonical_obj)
     mac = hmac.new(key_bytes, canon_bytes, hashlib.sha256).hexdigest()
@@ -176,38 +201,65 @@ def verify_override_lineage_receipt(
     return hmac.compare_digest(expected_mac.lower(), receipt.hmac_signature.lower())
 
 
+def _apply_rule_to_leaf(rule: Dict[str, Any], ov: ParameterOverrideEntry) -> None:
+    if ov.override_kind == "VALUE_CLAMPED" and isinstance(ov.approved_value, (int, float)):
+        current_max = rule.get("maximum")
+        rule["maximum"] = (
+            min(current_max, ov.approved_value)
+            if current_max is not None
+            else ov.approved_value
+        )
+    elif ov.override_kind == "VALUE_RAISED_MIN" and isinstance(ov.approved_value, (int, float)):
+        current_min = rule.get("minimum")
+        rule["minimum"] = (
+            max(current_min, ov.approved_value)
+            if current_min is not None
+            else ov.approved_value
+        )
+    elif ov.override_kind == "FLAG_STRIPPED":
+        rule["pattern"] = NO_LEADING_FLAG_PATTERN
+        rule["description"] = "Leading CLI flags stripped by human override policy"
+    elif ov.override_kind == "PATH_JAILED":
+        rule["pattern"] = JAILED_PATH_PATTERN
+    elif ov.override_kind == "ENUM_RESTRICTED" and ov.approved_value is not None:
+        allowed = rule.setdefault("enum", [])
+        if ov.approved_value not in allowed:
+            allowed.append(ov.approved_value)
+    elif ov.override_kind == "KEY_REMOVED":
+        rule["not"] = {}
+
+
 def synthesize_json_schema_patch(
     receipts: Sequence[OverrideLineageReceipt],
+    expected_tool_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Deterministically compile human override deltas into a JSON Schema Draft 2020-12
-
-    property constraint patch without invoking an LLM.
     """
-    properties_patch: Dict[str, Dict[str, Any]] = {}
-    for rec in receipts:
-        for ov in rec.overrides:
-            prop_name = ov.json_path.split(".")[-1]
-            rule = properties_patch.setdefault(prop_name, {})
-            if ov.override_kind == "VALUE_CLAMPED" and isinstance(ov.approved_value, (int, float)):
-                current_max = rule.get("maximum")
-                rule["maximum"] = (
-                    min(current_max, ov.approved_value)
-                    if current_max is not None
-                    else ov.approved_value
-                )
-            elif ov.override_kind == "FLAG_STRIPPED":
-                rule["pattern"] = r"^(?!-).*$"
-                rule["description"] = "Leading CLI flags stripped by human override policy"
-            elif ov.override_kind == "PATH_JAILED" and isinstance(ov.approved_value, str):
-                rule["pattern"] = r"^(?!\.\./|/etc/|/root/).*$"
-            elif ov.override_kind == "ENUM_RESTRICTED" and ov.approved_value is not None:
-                allowed = rule.setdefault("enum", [])
-                if ov.approved_value not in allowed:
-                    allowed.append(ov.approved_value)
-            elif ov.override_kind == "KEY_REMOVED":
-                rule["not"] = {}
-    return {
+    Deterministically compile human override deltas into a nested JSON Schema Draft 2020-12
+    constraint tree, enforcing single-tool scope isolation.
+    """
+    if not receipts:
+        return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {}}
+
+    target_tool = nfc_normalize(expected_tool_name or receipts[0].tool_name)
+    root_schema: Dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": properties_patch,
+        "title": target_tool,
         "type": "object",
+        "properties": {},
     }
+
+    for rec in receipts:
+        if rec.tool_name != target_tool:
+            raise ValueError(
+                f"Cross-tool schema pollution blocked: expected '{target_tool}', got '{rec.tool_name}'"
+            )
+        for ov in rec.overrides:
+            segments = [s for s in ov.json_path.split(".")[1:] if s]
+            cursor = root_schema["properties"]
+            for seg in segments[:-1]:
+                node = cursor.setdefault(seg, {"type": "object", "properties": {}})
+                cursor = node.setdefault("properties", {})
+            leaf_rule = cursor.setdefault(segments[-1], {})
+            _apply_rule_to_leaf(leaf_rule, ov)
+
+    return root_schema
