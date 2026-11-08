@@ -87,7 +87,7 @@ def _classify_parameter_override(path: str, prop: Any, appr: Any) -> ParameterOv
     if isinstance(prop, str) and isinstance(appr, str):
         if prop.startswith("-") and not appr.startswith("-"):
             return ParameterOverrideEntry(path, "FLAG_STRIPPED", prop, appr)
-        if (".." in prop or prop.startswith("/")) and not (".." in appr):
+        if (".." in prop or prop.startswith("/")) and ".." not in appr:
             return ParameterOverrideEntry(path, "PATH_JAILED", prop, appr)
         return ParameterOverrideEntry(path, "ENUM_RESTRICTED", prop, appr)
     if isinstance(prop, list) and isinstance(appr, list):
