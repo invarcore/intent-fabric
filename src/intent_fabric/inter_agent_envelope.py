@@ -89,9 +89,10 @@ class ReplayNonceLedger:
                     f"INV-04 violation: replayed session_nonce '{norm_nonce}'"
                 )
 
-            while operator.ge(len(self._nonces), self._max_capacity) and self._order:
-                evict_key, _ = self._order.popleft()
-                self._nonces.pop(evict_key, None)
+            if operator.ge(len(self._nonces), self._max_capacity):
+                raise InterAgentAuthError(
+                    "INV-04 Rate Limit: Nonce ledger capacity exhausted; cannot evict unexpired nonces"
+                )
 
             expiry = now_s + ttl_s
             self._nonces[norm_nonce] = expiry

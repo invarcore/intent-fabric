@@ -174,16 +174,18 @@ def test_nonce_ledger_capacity_eviction_and_expiry() -> None:
     with pytest.raises(InterAgentAuthError, match="replayed session_nonce 'n1'"):
         ledger.verify_and_record("n1", now_s=105.0, ttl_s=10.0)
 
-    # Pushing n3 evicts oldest (n1) when at capacity
-    ledger.verify_and_record("n3", now_s=106.0, ttl_s=10.0)
-    assert len(ledger._nonces) == 2
+    # Pushing n3 when capacity is full with active nonces raises fail-closed rate limit
+    with pytest.raises(InterAgentAuthError, match="Nonce ledger capacity exhausted"):
+        ledger.verify_and_record("n3", now_s=106.0, ttl_s=10.0)
 
     # Advance time to 120.0 (all prior expired)
     ledger.verify_and_record("n4", now_s=120.0, ttl_s=10.0)
     # n2 should have been expired and cleared
     assert "n2" not in ledger._nonces
+    assert len(ledger._nonces) == 1
 
 
 def test_rfc8785_canonical_bytes_structures() -> None:
     b = rfc8785_canonical_bytes({"nested": ["a", "b"], "k": 1})
     assert b == b'{"k":1,"nested":["a","b"]}'
+
