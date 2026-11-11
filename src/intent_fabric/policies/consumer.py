@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 from intent_fabric.approvals.signing import SignedExecutionToken, TokenSigner
+from intent_fabric.compaction_lock import (
+    CompactionConstraintLock,
+    PostCompactionRuleViolationError,
+    SilentModelRouteDriftError,
+    enforce_post_compaction_lock,
+)
 from intent_fabric.contracts.evidence_verifier import (
     VerificationResult,
     verify_evidence_package,
@@ -43,10 +49,12 @@ class GovernedPolicyExecutor:
         policy_engine: PolicyEngine,
         planner: Planner,
         signer: TokenSigner,
+        compaction_lock: Optional[CompactionConstraintLock] = None,
     ) -> None:
         self.policy_engine = policy_engine
         self.planner = planner
         self.signer = signer
+        self.compaction_lock = compaction_lock
         self._seen_retrieval_ids: Set[str] = set()
 
     def execute(
@@ -54,6 +62,10 @@ class GovernedPolicyExecutor:
         intent_goal: str,
         evidence_package: Dict[str, Any],
         max_age_seconds: float = 60.0,
+        *,
+        compaction_lock: Optional[CompactionConstraintLock] = None,
+        observed_model_version: Optional[str] = None,
+        require_model_version: bool = False,
     ) -> GovernedExecutionResult:
         """Executes full verification and policy governance flow."""
         retrieval_id = evidence_package.get("retrieval_id")
@@ -68,7 +80,9 @@ class GovernedPolicyExecutor:
         if retrieval_id in self._seen_retrieval_ids:
             return GovernedExecutionResult(
                 is_authorized=False,
-                rejection_reasons=[f"Replay detected: retrieval_id '{retrieval_id}' already consumed"],
+                rejection_reasons=[
+                    f"Replay detected: retrieval_id '{retrieval_id}' already consumed"
+                ],
             )
 
         # Ensure evidence package is not empty in governed planning
@@ -76,7 +90,9 @@ class GovernedPolicyExecutor:
         if not chunks_present:
             return GovernedExecutionResult(
                 is_authorized=False,
-                rejection_reasons=["Empty evidence package: actions require non-empty verified evidence"],
+                rejection_reasons=[
+                    "Empty evidence package: actions require non-empty verified evidence"
+                ],
             )
 
         # 2. Cryptographic and Freshness Verification
@@ -85,7 +101,9 @@ class GovernedPolicyExecutor:
             return GovernedExecutionResult(
                 is_authorized=False,
                 verification=verification,
-                rejection_reasons=[verification.error_reason or "Cryptographic verification failed"],
+                rejection_reasons=[
+                    verification.error_reason or "Cryptographic verification failed"
+                ],
             )
 
         # Mark retrieval_id as seen once verified
@@ -121,8 +139,35 @@ class GovernedPolicyExecutor:
         # 4. Policy Evaluation
         decision = self.policy_engine.evaluate(plan)
 
+        # 4b. Pre-Execution ARCBench Post-Compaction Constraint Lock (when active)
+        active_lock = compaction_lock if compaction_lock is not None else self.compaction_lock
+        if active_lock is not None:
+            try:
+                for step in plan.steps:
+                    step_args = dict(step.action_contract.parameters or {})
+                    if "__contract_target" not in step_args:
+                        step_args["__contract_target"] = step.action_contract.target
+                    enforce_post_compaction_lock(
+                        active_lock,
+                        step.action_contract.action_type,
+                        step_args,
+                        observed_model_version=observed_model_version,
+                        require_model_version=require_model_version,
+                    )
+            except (PostCompactionRuleViolationError, SilentModelRouteDriftError) as exc:
+                return GovernedExecutionResult(
+                    is_authorized=False,
+                    decision=decision,
+                    verification=verification,
+                    plan=plan,
+                    execution_token=None,
+                    rejection_reasons=[str(exc)],
+                )
+
         # 5. Token Generation or Deny Execution
-        decision_type = getattr(decision, "decision_type", None) or getattr(decision, "decision", None)
+        decision_type = getattr(decision, "decision_type", None) or getattr(
+            decision, "decision", None
+        )
         if decision_type == PolicyDecisionType.ALLOW:
             token = self.signer.sign_execution(
                 plan_id=plan.plan_id,

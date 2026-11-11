@@ -243,6 +243,15 @@ rules:
 
 ---
 
+## 🛡️ ETUDE Tool-Update Lock & ARCBench Compaction Lock
+
+`intent-fabric` enforces execution-time invariants against silent post-registration tool mutations and post-compaction instruction decay:
+
+- **ETUDE Tool-Update Lock (`intent_fabric.etude_lock`)**: Pins each tool's canonicalized RFC 8785 schema digest (`compute_schema_sha256`), normalized AST hash, transitive `helper_sources`, and authorized capability sinks (`subprocess`, `dynamic_exec`, `network`, `fs_write`, `deserialization`, `env`) in [`EtudeToolLockRegistry`](src/intent_fabric/etude_lock.py). Silent body mutations or unauthorized sink injections fail closed with `ToolImplementationDriftError` even when the MCP JSON schema stays unchanged. Includes `CrossInvocationStateGuard` for multi-call session sink escalation detection and JSON lockfile persistence.
+- **ARCBench Post-Compaction Constraint Lock (`intent_fabric.compaction_lock`)**: Enforces signed `@arcbench_lock:sha256:...` constraint sidecars exported by `unloop` (`export_arcbench_lock_sidecar`). Validates positive `allowed_tools` allowlists, `forbidden_tools`, traversal-safe `forbidden_path_prefixes`, deeply frozen scalar-strict `pinned_arg_literals`, and `pinned_model_version` against silent model swaps via `enforce_post_compaction_lock`.
+
+---
+
 ## Quickstart
 
 ### 1. Install via PyPI

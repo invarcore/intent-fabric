@@ -13,6 +13,7 @@ from intent_fabric.approvals.signing import (
     TokenSigner,
     compute_approval_signature,
 )
+from intent_fabric.compaction_lock import CompactionConstraintLock
 from intent_fabric.mcp.schema import MCP_SCHEMA_VERSION, envelope, unwrap_payload
 from intent_fabric.policies import GovernedExecutionResult, GovernedPolicyExecutor, PolicyEngine
 from intent_fabric.planning import RuleBasedPlanner, build_planner
@@ -37,20 +38,18 @@ class IntentFabricMCPTools:
         approval_generator: ApprovalPackageGenerator | None = None,
         simulator: SimulationExecutor | None = None,
         governed_executor: GovernedPolicyExecutor | None = None,
+        compaction_lock: CompactionConstraintLock | None = None,
     ) -> None:
         self._planner = planner or build_planner() or RuleBasedPlanner()
         self._policy_engine = policy_engine or PolicyEngine()
         self._approval_generator = approval_generator or ApprovalPackageGenerator()
         self._simulator = simulator or SimulationExecutor()
-        self._governed_executor = (
-            governed_executor
-            or GovernedPolicyExecutor(
-                policy_engine=self._policy_engine,
-                planner=self._planner,
-                signer=TokenSigner(),
-            )
+        self._governed_executor = governed_executor or GovernedPolicyExecutor(
+            policy_engine=self._policy_engine,
+            planner=self._planner,
+            signer=TokenSigner(),
+            compaction_lock=compaction_lock,
         )
-
 
     def health_check(self) -> dict[str, Any]:
         planner_name = type(self._planner).__name__
@@ -165,6 +164,10 @@ class IntentFabricMCPTools:
         intent_goal: str,
         evidence_package: dict[str, Any],
         max_age_seconds: float = 60.0,
+        *,
+        compaction_lock: CompactionConstraintLock | None = None,
+        observed_model_version: str | None = None,
+        require_model_version: bool = False,
     ) -> dict[str, Any]:
         """Evaluates an agent intent goal against cryptographically verified evidence."""
         return evaluate_governed_intent(
@@ -172,6 +175,9 @@ class IntentFabricMCPTools:
             intent_goal=intent_goal,
             evidence_package=evidence_package,
             max_age_seconds=max_age_seconds,
+            compaction_lock=compaction_lock,
+            observed_model_version=observed_model_version,
+            require_model_version=require_model_version,
         )
 
 
@@ -180,6 +186,10 @@ def evaluate_governed_intent(
     intent_goal: str,
     evidence_package: dict[str, Any],
     max_age_seconds: float = 60.0,
+    *,
+    compaction_lock: CompactionConstraintLock | None = None,
+    observed_model_version: str | None = None,
+    require_model_version: bool = False,
 ) -> dict[str, Any]:
     """Evaluates an agent intent goal against cryptographically verified evidence.
 
@@ -190,6 +200,9 @@ def evaluate_governed_intent(
         intent_goal=intent_goal,
         evidence_package=evidence_package,
         max_age_seconds=max_age_seconds,
+        compaction_lock=compaction_lock,
+        observed_model_version=observed_model_version,
+        require_model_version=require_model_version,
     )
 
     token_payload = None
@@ -203,7 +216,9 @@ def evaluate_governed_intent(
     dec_val = "DENY"
     reason = None
     if result.decision:
-        raw_dec = getattr(result.decision, "decision_type", None) or getattr(result.decision, "decision", None)
+        raw_dec = getattr(result.decision, "decision_type", None) or getattr(
+            result.decision, "decision", None
+        )
         if raw_dec is not None:
             dec_val = raw_dec.value if hasattr(raw_dec, "value") else str(raw_dec)
         reason = getattr(result.decision, "reason", None) or (
@@ -219,5 +234,3 @@ def evaluate_governed_intent(
         "plan_id": result.plan.plan_id if result.plan else None,
         "verified_at": result.verification.verified_at.isoformat() if result.verification else None,
     }
-
-

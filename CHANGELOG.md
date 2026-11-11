@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-12
+
+### Added
+- **OWASP ASI07 Inter-Agent Delegation (`inter_agent_envelope.py`)**: HMAC-SHA256 inter-agent authorization envelopes with `ReplayNonceLedger`, configurable freshness bounds ($\Delta t \le 60\text{s}$), and 5s clock-skew protection.
+- **OverrideDelta Policy Synthesis (`override_delta.py`)**: Captures reviewer parameter overrides and compiles reusable YAML policy rules & JSON Schema Draft 2020-12 constraints.
+- **ETUDE Tool-Update Lock (`etude_lock.py`)**: Canonical schema/AST/sink pinning via `EtudeToolLockRegistry`, transitive `helper_sources` verification, `CrossInvocationStateGuard`, and fail-closed `ToolImplementationDriftError` detection.
+- **ARCBench Compaction Lock (`compaction_lock.py`)**: Cryptographic `@arcbench_lock:sha256:...` post-compaction constraint enforcement (`allowed_tools`, `forbidden_tools`, traversal-normalized `forbidden_path_prefixes`, deeply frozen type-strict `pinned_arg_literals`, and `pinned_model_version` drift detection).
+
 ## [0.1.2] - 2026-09-28
 
 ### Added
