@@ -7,6 +7,7 @@ from intent_fabric.security.etude_lock import (
     EtudeToolEntry,
     EtudeToolLockRegistry,
     ToolImplementationDriftError,
+    _NormalizedASTVisitor,
     analyze_Python_tool_ast,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "EtudeToolEntry",
     "EtudeToolLockRegistry",
     "ToolImplementationDriftError",
+    "_NormalizedASTVisitor",
     "analyze_Python_tool_ast",
 ]

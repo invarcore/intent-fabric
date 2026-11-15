@@ -37,6 +37,7 @@ def test_create_mcp_server_registers_expected_tools(monkeypatch) -> None:
         "create_approval_package",
         "create_plan_from_evidence",
         "evaluate_intent",
+        "execute_batched_dag",
         "health_check",
         "sign_approval",
         "simulate_plan",
@@ -131,4 +132,40 @@ def test_mcp_server_tools_execute_end_to_end(monkeypatch) -> None:
     )
     assert eval_res["is_authorized"] is True
     assert eval_res["execution_token"] is not None
+
+    # 8. Execute batched DAG
+    from intent_fabric.contracts.batched_dag import BatchedDAGToken, DAGStepSpec
+    dag_secret = b"mcp-dag-token-secret-key-32bytes"
+    minted_dag = BatchedDAGToken.mint(
+        tenant_id="tenant_1",
+        actor_id="mcp-tester",
+        steps=[DAGStepSpec(step_id="step_1", tool_name="echo_tool", arguments={"msg": "hello"})],
+        secret_key=dag_secret,
+    )
+    dag_payload = {
+        "token_id": minted_dag.token_id,
+        "tenant_id": minted_dag.tenant_id,
+        "actor_id": minted_dag.actor_id,
+        "issued_at": minted_dag.issued_at,
+        "expires_at": minted_dag.expires_at,
+        "ordered_steps": [
+            {
+                "step_id": s.step_id,
+                "tool_name": s.tool_name,
+                "arguments": s.arguments,
+                "depends_on": s.depends_on,
+            }
+            for s in minted_dag.ordered_steps
+        ],
+        "dag_digest": minted_dag.dag_digest,
+        "signature": minted_dag.signature,
+    }
+    dag_exec_res = tools["execute_batched_dag"](
+        token_payload=dag_payload,
+        secret_key=dag_secret.decode("utf-8"),
+        expected_tenant_id="tenant_1",
+    )
+    assert dag_exec_res["tool"] == "execute_batched_dag"
+    assert dag_exec_res["payload"]["final_status"] == "CONFIRMED"
+    assert len(dag_exec_res["payload"]["step_receipts"]) == 1
 

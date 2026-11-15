@@ -117,11 +117,11 @@ def test_topological_sort_edge_cases():
 def test_mint_policy_validations():
     steps = [DAGStepSpec("s1", "t1", {})]
 
-    # Secret key < 16 bytes
-    with pytest.raises(DAGPolicyViolationError, match="at least 16 non-whitespace bytes"):
+    # Secret key < 32 bytes
+    with pytest.raises(DAGPolicyViolationError, match="at least 32 non-whitespace bytes"):
         BatchedDAGToken.mint("t1", "a1", steps, b"short")
 
-    with pytest.raises(DAGPolicyViolationError, match="at least 16 non-whitespace bytes"):
+    with pytest.raises(DAGPolicyViolationError, match="at least 32 non-whitespace bytes"):
         BatchedDAGToken.mint("t1", "a1", steps, "short_str")
 
     # Empty tenant or actor
@@ -144,11 +144,11 @@ def test_verify_and_execute_policy_violations():
     token = BatchedDAGToken.mint("tenant-1", "actor-1", steps, SECRET, ttl_seconds=10.0)
     registry = {"t1": lambda a, p: (ReadbackState.CONFIRMED, {"res": "ok"})}
 
-    # Secret key < 16 bytes on verify
-    with pytest.raises(DAGPolicyViolationError, match="at least 16 non-whitespace bytes"):
+    # Secret key < 32 bytes on verify
+    with pytest.raises(DAGPolicyViolationError, match="at least 32 non-whitespace bytes"):
         verify_and_execute_batched_dag(token, b"short", registry, "tenant-1", set())
 
-    with pytest.raises(DAGPolicyViolationError, match="at least 16 non-whitespace bytes"):
+    with pytest.raises(DAGPolicyViolationError, match="at least 32 non-whitespace bytes"):
         verify_and_execute_batched_dag(token, "short_str", registry, "tenant-1", set())
 
     # Tenant mismatch
@@ -222,10 +222,25 @@ def test_halt_on_failed_readback_and_dependency_failure():
     assert executed_s2 == []
 
 
-def test_dependency_receipt_missing():
-    # If a signed token has a dependency not present in receipts (e.g. unknown step not in DAG)
-    step2 = DAGStepSpec("s2", "t2", {}, depends_on=("s1",))
-    # construct token with signature valid for step2 alone
-    # Note: topological_sort_steps inside verify_and_execute_batched_dag will catch unknown dep if run normally,
-    # but if ordered_steps has s2 without s1, topological_sort_steps raises DAGCycleError.
-    # To test line 295, we can test when dep is not CONFIRMED in receipts.
+def test_dependency_receipt_missing_and_32_byte_key_floor():
+    # 1. Verify 32-byte (256-bit) minimum key floor
+    short_key = b"short-16byte-key"
+    step = DAGStepSpec(step_id="s1", tool_name="noop", arguments={})
+    with pytest.raises(DAGPolicyViolationError, match="32 non-whitespace bytes"):
+        BatchedDAGToken.mint("tenant-1", "actor-1", [step], secret_key=short_key)
+
+    # 2. Verify defensive guard when a dependency receipt is missing at runtime
+    s1 = DAGStepSpec(step_id="s1", tool_name="noop", arguments={})
+    s2 = DAGStepSpec(step_id="s2", tool_name="noop", arguments={}, depends_on=("s1",))
+    tok = BatchedDAGToken.mint("tenant-1", "actor-1", [s1, s2], secret_key=SECRET)
+
+    # Mutate s2's depends_on via object.__setattr__ inside s1's handler to trigger missing dependency receipt
+    def _mutating_s1(args, receipts):
+        object.__setattr__(s2, "depends_on", ("missing_ghost_step",))
+        return (ReadbackState.CONFIRMED, {"ok": True})
+
+    registry = {
+        "noop": _mutating_s1,
+    }
+    with pytest.raises(DAGHaltedOnReadbackError, match="not CONFIRMED"):
+        verify_and_execute_batched_dag(tok, SECRET, registry, "tenant-1", set())

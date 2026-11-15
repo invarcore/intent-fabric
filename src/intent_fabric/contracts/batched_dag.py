@@ -139,8 +139,10 @@ class BatchedDAGToken:
             if isinstance(secret_key, str)
             else secret_key.strip()
         )
-        if len(secret_bytes) < 16:
-            raise DAGPolicyViolationError("Signing key must be at least 16 non-whitespace bytes.")
+        if len(secret_bytes) < 32:
+            raise DAGPolicyViolationError(
+                "Signing key must be at least 32 non-whitespace bytes (256-bit minimum)."
+            )
         if not tenant_id or not tenant_id.strip() or not actor_id or not actor_id.strip():
             raise DAGPolicyViolationError("tenant_id and actor_id are mandatory.")
         if ttl_seconds <= 0 or ttl_seconds > 300.0:
@@ -249,8 +251,10 @@ def verify_and_execute_batched_dag(
     secret_bytes = (
         secret_key.strip().encode("utf-8") if isinstance(secret_key, str) else secret_key.strip()
     )
-    if len(secret_bytes) < 16:
-        raise DAGPolicyViolationError("Signing key must be at least 16 non-whitespace bytes.")
+    if len(secret_bytes) < 32:
+        raise DAGPolicyViolationError(
+            "Signing key must be at least 32 non-whitespace bytes (256-bit minimum)."
+        )
     if token.tenant_id != expected_tenant_id.strip():
         raise DAGPolicyViolationError(
             f"Tenant isolation violation (INV-05): token='{token.tenant_id}', expected='{expected_tenant_id}'."

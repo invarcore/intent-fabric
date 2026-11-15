@@ -108,6 +108,21 @@ def create_mcp_server(tools: IntentFabricMCPTools | None = None) -> Any:
             max_age_seconds=max_age_seconds,
         )
 
+    @server.tool(name="execute_batched_dag")
+    def execute_batched_dag(
+        token_payload: dict[str, Any],
+        secret_key: str,
+        expected_tenant_id: str,
+        tool_handlers: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Verify and execute an authorized batched DAG token in topological order."""
+        return tools_instance.execute_batched_dag(
+            token_payload=token_payload,
+            secret_key=secret_key,
+            expected_tenant_id=expected_tenant_id,
+            tool_handlers=tool_handlers,
+        )
+
     return server
 
 

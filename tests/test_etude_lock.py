@@ -103,11 +103,11 @@ def test_etude_lock_passes_identical_ast_and_catches_silent_tool_updates():
 
 
 def test_etude_lock_sink_detection_and_edge_cases():
-    # Secret key < 16 bytes
-    with pytest.raises(ValueError, match="at least 16 non-whitespace bytes"):
+    # Secret key < 32 bytes (256-bit minimum)
+    with pytest.raises(ValueError, match="at least 32 non-whitespace bytes"):
         EtudeToolLockRegistry(b"short")
 
-    with pytest.raises(ValueError, match="at least 16 non-whitespace bytes"):
+    with pytest.raises(ValueError, match="at least 32 non-whitespace bytes"):
         EtudeToolLockRegistry("short_str")
 
     reg = EtudeToolLockRegistry(SECRET)
@@ -159,3 +159,12 @@ def test_etude_lock_sink_detection_and_edge_cases():
     modified_schema["description"] = "Modified description"
     with pytest.raises(ToolImplementationDriftError, match="Tool schema drift detected"):
         reg.verify_live_tools(bundle, {"tax": (modified_schema, benign_calculate_tax)})
+
+
+def test_canonical_and_security_shim_export_identical_class():
+    from intent_fabric import EtudeToolLockRegistry as RootRegistry
+    from intent_fabric.etude_lock import EtudeToolLockRegistry as CanonicalRegistry
+    from intent_fabric.security.etude_lock import EtudeToolLockRegistry as SecurityShimRegistry
+
+    assert RootRegistry is CanonicalRegistry
+    assert SecurityShimRegistry is CanonicalRegistry

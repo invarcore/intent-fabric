@@ -14,6 +14,12 @@ from intent_fabric.approvals.signing import (
     compute_approval_signature,
 )
 from intent_fabric.compaction_lock import CompactionConstraintLock
+from intent_fabric.contracts.batched_dag import (
+    BatchedDAGToken,
+    DAGStepSpec,
+    ReadbackState,
+    verify_and_execute_batched_dag,
+)
 from intent_fabric.mcp.schema import MCP_SCHEMA_VERSION, envelope, unwrap_payload
 from intent_fabric.policies import GovernedExecutionResult, GovernedPolicyExecutor, PolicyEngine
 from intent_fabric.planning import RuleBasedPlanner, build_planner
@@ -50,6 +56,7 @@ class IntentFabricMCPTools:
             signer=TokenSigner(),
             compaction_lock=compaction_lock,
         )
+        self._consumed_dag_token_ids: set[str] = set()
 
     def health_check(self) -> dict[str, Any]:
         planner_name = type(self._planner).__name__
@@ -178,6 +185,73 @@ class IntentFabricMCPTools:
             compaction_lock=compaction_lock,
             observed_model_version=observed_model_version,
             require_model_version=require_model_version,
+        )
+
+    def execute_batched_dag(
+        self,
+        token_payload: dict[str, Any],
+        secret_key: str | bytes,
+        expected_tenant_id: str,
+        tool_handlers: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute an authorized BatchedDAGToken in topological order and return an execution report."""
+        ordered_steps = tuple(
+            DAGStepSpec(
+                step_id=str(s["step_id"]),
+                tool_name=str(s["tool_name"]),
+                arguments=dict(s.get("arguments", {})),
+                depends_on=tuple(str(d) for d in s.get("depends_on", ())),
+            )
+            for s in token_payload.get("ordered_steps", [])
+        )
+        token = BatchedDAGToken(
+            token_id=str(token_payload["token_id"]),
+            tenant_id=str(token_payload["tenant_id"]),
+            actor_id=str(token_payload["actor_id"]),
+            issued_at=float(token_payload["issued_at"]),
+            expires_at=float(token_payload["expires_at"]),
+            ordered_steps=ordered_steps,
+            dag_digest=str(token_payload["dag_digest"]),
+            signature=str(token_payload["signature"]),
+        )
+
+        handlers = tool_handlers or {}
+        full_registry: dict[str, Any] = {}
+        for s in token.ordered_steps:
+            if s.tool_name in handlers:
+                full_registry[s.tool_name] = handlers[s.tool_name]
+            else:
+                full_registry[s.tool_name] = lambda args, prev: (
+                    ReadbackState.CONFIRMED,
+                    {"executed": True, "tool": s.tool_name, "args": args},
+                )
+
+        report = verify_and_execute_batched_dag(
+            token=token,
+            secret_key=secret_key,
+            tool_A_registry=full_registry,
+            expected_tenant_id=expected_tenant_id,
+            consumed_token_ids=self._consumed_dag_token_ids,
+        )
+
+        return envelope(
+            tool="execute_batched_dag",
+            payload={
+                "token_id": report.token_id,
+                "tenant_id": report.tenant_id,
+                "final_status": report.final_status.value,
+                "step_receipts": [
+                    {
+                        "step_id": r.step_id,
+                        "tool_name": r.tool_name,
+                        "status": r.status.value,
+                        "readback_hash": r.readback_hash,
+                        "output": dict(r.output),
+                    }
+                    for r in report.step_receipts
+                ],
+                "composite_readback_digest": report.composite_readback_digest,
+            },
         )
 
 

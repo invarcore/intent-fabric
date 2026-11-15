@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import hmac
 import inspect
 import json
 import math
@@ -22,7 +23,7 @@ import textwrap
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Set, Tuple, Union
 
 SINK_CALL_PATTERNS: Dict[str, Tuple[str, ...]] = {
     "net": (
@@ -174,6 +175,28 @@ _DYNAMIC_EXEC_BUILTINS: Tuple[str, ...] = (
 
 class ToolImplementationDriftError(PermissionError):
     """Raised when a tool implementation, schema, lockfile, or sink session drifts."""
+
+
+def _lp_utf8(value: str) -> str:
+    norm = unicodedata.normalize("NFC", value)
+    raw = norm.encode("utf-8")
+    return f"{len(raw)}:{norm}"
+
+
+@dataclass(frozen=True)
+class EtudeToolEntry:
+    tool_name: str
+    schema_sha256: str
+    ast_sha256: str
+    capability_sinks: Tuple[str, ...]
+
+    def to_canonical_dict(self) -> Dict[str, Any]:
+        return {
+            "ast_sha256": _lp_utf8(self.ast_sha256),
+            "capability_sinks": [_lp_utf8(s) for s in self.capability_sinks],
+            "schema_sha256": _lp_utf8(self.schema_sha256),
+            "tool_name": _lp_utf8(self.tool_name),
+        }
 
 
 @dataclass(frozen=True)
@@ -347,11 +370,38 @@ def _is_write_open_call(node: ast.Call, alias_map: Mapping[str, str] | None = No
     return False
 
 
+class _NormalizedASTVisitor(ast.NodeTransformer):
+    """Strips leading docstrings from function/async-function bodies before ast.unparse()."""
+
+    def _strip_docstring(self, node: ast.AST) -> ast.AST:
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body:
+            first = body[0]
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                body = body[1:] or [ast.Pass()]
+                setattr(node, "body", body)
+        return self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        node.name = "_canonical_tool_function"
+        return self._strip_docstring(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+        node.name = "_canonical_tool_function"
+        return self._strip_docstring(node)
+
+
 def analyze_python_tool_source(source_code: str) -> Tuple[str, Tuple[str, ...]]:
     """Compute normalized AST SHA-256 and sorted reachable capability sinks for Python source."""
     dedented = textwrap.dedent(source_code).strip()
-    tree = ast.parse(dedented)
-    normalized_ast = ast.dump(tree, annotate_fields=True, include_attributes=False)
+    tree = ast.parse(unicodedata.normalize("NFC", dedented))
+    clean_tree = _NormalizedASTVisitor().visit(tree)
+    ast.fix_missing_locations(clean_tree)
+    normalized_ast = unicodedata.normalize("NFC", ast.unparse(clean_tree))
     ast_sha256 = hashlib.sha256(normalized_ast.encode("utf-8")).hexdigest()
 
     sinks: Set[str] = set()
@@ -479,11 +529,124 @@ def _analyze_tool_and_helpers(
     return composite_hash, tuple(sorted(sinks_union))
 
 
+def analyze_Python_tool_ast(func_or_source: Any) -> Tuple[str, Tuple[str, ...]]:
+    """Computes normalized AST SHA-256 digest and sorted capability sinks for a callable or source."""
+    raw_src = textwrap.dedent(inspect.getsource(func_or_source) if callable(func_or_source) else str(func_or_source))
+    return analyze_python_tool_source(raw_src)
+
+
+analyze_python_tool_ast = analyze_Python_tool_ast
+
+
 @dataclass
 class EtudeToolLockRegistry:
     """Registry that pins and verifies MCP tool schemas, AST locks, and lockfile persistence."""
 
     locks: Dict[str, ToolLockEntry] = field(default_factory=dict)
+    secret_key: Optional[Union[bytes, str]] = None
+
+    def __init__(
+        self,
+        secret_key: Optional[Union[bytes, str]] = None,
+        locks: Optional[Dict[str, ToolLockEntry]] = None,
+    ) -> None:
+        if secret_key is not None:
+            secret_bytes = (
+                secret_key.strip().encode("utf-8")
+                if isinstance(secret_key, str)
+                else secret_key.strip()
+            )
+            if len(secret_bytes) < 32:
+                raise ValueError("secret_key must be at least 32 non-whitespace bytes (256-bit minimum).")
+            self._secret_bytes: Optional[bytes] = secret_bytes
+        else:
+            self._secret_bytes = None
+        self.secret_key = secret_key
+        self.locks = dict(locks) if locks is not None else {}
+
+    @staticmethod
+    def _hash_schema(schema: Mapping[str, Any]) -> str:
+        raw = json.dumps(schema, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
+        return hashlib.sha256(raw).hexdigest()
+
+    def build_lock_manifest(
+        self, tools: Mapping[str, Tuple[Mapping[str, Any], Callable[..., Any]]]
+    ) -> Dict[str, Any]:
+        if self._secret_bytes is None:
+            raise ValueError("secret_key must be configured to build lock manifest.")
+        entries: Dict[str, Any] = {}
+        for name in sorted(tools.keys()):
+            schema, fn = tools[name]
+            s_hash = self._hash_schema(schema)
+            a_hash, sinks = analyze_Python_tool_ast(fn)
+            entry = EtudeToolEntry(
+                tool_name=name,
+                schema_sha256=s_hash,
+                ast_sha256=a_hash,
+                capability_sinks=sinks,
+            )
+            entries[name] = entry.to_canonical_dict()
+
+        body = {"schema_version": "etude-lock-rfc8785-v1", "tools": entries}
+        canonical_bytes = json.dumps(
+            body, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        mac = hmac.new(self._secret_bytes, canonical_bytes, hashlib.sha256).hexdigest()
+        return {"manifest": body, "signature": mac}
+
+    def verify_live_tools(
+        self,
+        locked_bundle: Mapping[str, Any],
+        live_tools: Mapping[str, Tuple[Mapping[str, Any], Callable[..., Any]]],
+        forbid_dynamic_exec: bool = True,
+    ) -> bool:
+        if self._secret_bytes is None:
+            raise ValueError("secret_key must be configured to verify live tools.")
+        manifest = locked_bundle.get("manifest")
+        sig = str(locked_bundle.get("signature", "")).strip()
+        if not isinstance(manifest, Mapping) or not sig:
+            raise ToolImplementationDriftError("Malformed mcp-etude-lock.json bundle.")
+
+        canonical_bytes = json.dumps(
+            manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        expected_mac = hmac.new(self._secret_bytes, canonical_bytes, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_mac.lower(), sig.lower()):
+            raise ToolImplementationDriftError("Lockfile HMAC signature verification failed.")
+
+        locked_tools = manifest.get("tools", {})
+        for name, (schema, fn) in live_tools.items():
+            if name not in locked_tools:
+                raise ToolImplementationDriftError(f"Unregistered tool '{name}' not in lockfile.")
+
+            locked_entry = locked_tools[name]
+            live_s_hash = _lp_utf8(self._hash_schema(schema))
+            live_a_hash_raw, live_sinks_raw = analyze_Python_tool_ast(fn)
+            live_a_hash = _lp_utf8(live_a_hash_raw)
+            live_sinks = [_lp_utf8(s) for s in live_sinks_raw]
+
+            if forbid_dynamic_exec and "dynamic_exec" in live_sinks_raw:
+                raise ToolImplementationDriftError(
+                    f"Tool '{name}' invokes forbidden dynamic_exec sink (eval/exec/getattr)."
+                )
+
+            if live_sinks != locked_entry["capability_sinks"]:
+                raise ToolImplementationDriftError(
+                    f"ETUDE sink expansion detected in '{name}': "
+                    f"locked={locked_entry['capability_sinks']} vs live={live_sinks}"
+                )
+
+            if not hmac.compare_digest(live_a_hash.lower(), locked_entry["ast_sha256"].lower()):
+                raise ToolImplementationDriftError(
+                    f"ETUDE implementation AST drift detected in '{name}' despite identical schema."
+                )
+
+            if not hmac.compare_digest(live_s_hash.lower(), locked_entry["schema_sha256"].lower()):
+                raise ToolImplementationDriftError(f"Tool schema drift detected in '{name}'.")
+
+        return True
 
     def pin_tool(
         self,
@@ -607,3 +770,21 @@ class EtudeToolLockRegistry:
 
         locks = {name: ToolLockEntry.from_dict(entry) for name, entry in ordered_locks.items()}
         return cls(locks=locks)
+
+
+__all__ = [
+    "CrossInvocationStateGuard",
+    "EtudeToolEntry",
+    "EtudeToolLockRegistry",
+    "SINK_CALL_PATTERNS",
+    "SINK_IMPORT_ROOTS",
+    "ToolImplementationDriftError",
+    "ToolLockEntry",
+    "_NormalizedASTVisitor",
+    "analyze_Python_tool_ast",
+    "analyze_python_tool_ast",
+    "analyze_python_tool_source",
+    "canonical_json_bytes",
+    "compute_schema_sha256",
+    "dotted_name",
+]
