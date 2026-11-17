@@ -511,18 +511,77 @@ def _extract_source(fn_or_source: Any) -> str:
     return inspect.getsource(fn_or_source) if callable(fn_or_source) else str(fn_or_source)
 
 
+def _find_transitive_helpers(func: Any, visited: Optional[Set[Any]] = None) -> Dict[str, Any]:
+    """Find transitive local helper callables called within the same module/package."""
+    if not callable(func):
+        return {}
+    if visited is None:
+        visited = set()
+    if func in visited:
+        return {}
+    visited.add(func)
+
+    mod_name = getattr(func, "__module__", None)
+    globs = getattr(func, "__globals__", {})
+    if not globs:
+        return {}
+
+    try:
+        raw_src = textwrap.dedent(inspect.getsource(func))
+        tree = ast.parse(unicodedata.normalize("NFC", raw_src))
+    except Exception:
+        return {}
+
+    helpers: Dict[str, Any] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            callee_name = node.func.id
+            callee = globs.get(callee_name)
+            if (
+                callee is not None
+                and callable(callee)
+                and callee is not func
+                and getattr(callee, "__module__", None) == mod_name
+                and getattr(callee, "__module__", None) != "builtins"
+            ):
+                helpers[callee_name] = callee
+                transitive = _find_transitive_helpers(callee, visited)
+                helpers.update(transitive)
+
+    return helpers
+
+
+def _find_helpers_in_source(source: str) -> Dict[str, str]:
+    """Find helper functions in a multi-function source string."""
+    try:
+        tree = ast.parse(unicodedata.normalize("NFC", textwrap.dedent(source)))
+    except Exception:
+        return {}
+    fn_defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    if len(fn_defs) <= 1:
+        return {}
+    helpers: Dict[str, str] = {}
+    for name, fn_node in fn_defs.items():
+        for child in ast.walk(fn_node):
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
+                called = child.func.id
+                if called in fn_defs and called != name:
+                    helpers[called] = ast.unparse(fn_defs[called])
+    return helpers
+
+
 def _analyze_tool_and_helpers(
     fn_or_source: Any,
     helper_sources: Sequence[Any] = (),
 ) -> Tuple[str, Tuple[str, ...]]:
     """Analyze primary tool implementation plus optional transitive helper sources."""
-    primary_hash, primary_sinks = analyze_python_tool_source(_extract_source(fn_or_source))
+    primary_hash, primary_sinks = analyze_Python_tool_ast(fn_or_source)
     if not helper_sources:
         return primary_hash, primary_sinks
     sinks_union: Set[str] = set(primary_sinks)
     hash_parts = [primary_hash]
     for helper in helper_sources:
-        h_hash, h_sinks = analyze_python_tool_source(_extract_source(helper))
+        h_hash, h_sinks = analyze_Python_tool_ast(helper)
         hash_parts.append(h_hash)
         sinks_union.update(h_sinks)
     composite_hash = hashlib.sha256(":".join(hash_parts).encode("utf-8")).hexdigest()
@@ -530,12 +589,37 @@ def _analyze_tool_and_helpers(
 
 
 def analyze_Python_tool_ast(func_or_source: Any) -> Tuple[str, Tuple[str, ...]]:
-    """Computes normalized AST SHA-256 digest and sorted capability sinks for a callable or source."""
-    raw_src = textwrap.dedent(inspect.getsource(func_or_source) if callable(func_or_source) else str(func_or_source))
-    return analyze_python_tool_source(raw_src)
+    """Computes normalized AST SHA-256 digest and sorted capability sinks for a callable or source.
+
+    Resolves and hashes transitive local helper functions called within the same module/package.
+    """
+    if callable(func_or_source):
+        raw_src = textwrap.dedent(inspect.getsource(func_or_source))
+        primary_hash, primary_sinks = analyze_python_tool_source(raw_src)
+        helpers = _find_transitive_helpers(func_or_source)
+    else:
+        raw_src = textwrap.dedent(str(func_or_source))
+        primary_hash, primary_sinks = analyze_python_tool_source(raw_src)
+        helpers = _find_helpers_in_source(raw_src)
+
+    if not helpers:
+        return primary_hash, primary_sinks
+
+    sinks_union: Set[str] = set(primary_sinks)
+    hash_parts = [primary_hash]
+    for h_name in sorted(helpers.keys()):
+        h_obj = helpers[h_name]
+        h_src = textwrap.dedent(inspect.getsource(h_obj) if callable(h_obj) else str(h_obj))
+        h_hash, h_sinks = analyze_python_tool_source(h_src)
+        hash_parts.append(f"{h_name}:{h_hash}")
+        sinks_union.update(h_sinks)
+
+    composite_hash = hashlib.sha256(":".join(hash_parts).encode("utf-8")).hexdigest()
+    return composite_hash, tuple(sorted(sinks_union))
 
 
 analyze_python_tool_ast = analyze_Python_tool_ast
+
 
 
 @dataclass
@@ -572,7 +656,9 @@ class EtudeToolLockRegistry:
         return hashlib.sha256(raw).hexdigest()
 
     def build_lock_manifest(
-        self, tools: Mapping[str, Tuple[Mapping[str, Any], Callable[..., Any]]]
+        self,
+        tools: Mapping[str, Tuple[Mapping[str, Any], Callable[..., Any]]],
+        lockfile_paths: Optional[Sequence[Union[Path, str]]] = ("uv.lock", "poetry.lock", "requirements.txt"),
     ) -> Dict[str, Any]:
         if self._secret_bytes is None:
             raise ValueError("secret_key must be configured to build lock manifest.")
@@ -589,7 +675,18 @@ class EtudeToolLockRegistry:
             )
             entries[name] = entry.to_canonical_dict()
 
-        body = {"schema_version": "etude-lock-rfc8785-v1", "tools": entries}
+        lockfile_digests: Dict[str, str] = {}
+        if lockfile_paths:
+            for lp in lockfile_paths:
+                p = Path(lp)
+                if p.exists() and p.is_file():
+                    digest = hashlib.sha256(p.read_bytes()).hexdigest()
+                    lockfile_digests[str(lp)] = digest
+
+        body: Dict[str, Any] = {"schema_version": "etude-lock-rfc8785-v1", "tools": entries}
+        if lockfile_digests:
+            body["lockfiles"] = lockfile_digests
+
         canonical_bytes = json.dumps(
             body, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")
@@ -601,6 +698,7 @@ class EtudeToolLockRegistry:
         locked_bundle: Mapping[str, Any],
         live_tools: Mapping[str, Tuple[Mapping[str, Any], Callable[..., Any]]],
         forbid_dynamic_exec: bool = True,
+        lockfile_paths: Optional[Sequence[Union[Path, str]]] = None,
     ) -> bool:
         if self._secret_bytes is None:
             raise ValueError("secret_key must be configured to verify live tools.")
@@ -615,6 +713,27 @@ class EtudeToolLockRegistry:
         expected_mac = hmac.new(self._secret_bytes, canonical_bytes, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected_mac.lower(), sig.lower()):
             raise ToolImplementationDriftError("Lockfile HMAC signature verification failed.")
+
+        locked_lockfiles = manifest.get("lockfiles", {})
+        if locked_lockfiles:
+            paths_to_check = (
+                [Path(lp) for lp in lockfile_paths]
+                if lockfile_paths is not None
+                else [Path(k) for k in locked_lockfiles.keys()]
+            )
+            for p in paths_to_check:
+                expected_digest = locked_lockfiles.get(str(p)) or locked_lockfiles.get(p.name)
+                if expected_digest is not None:
+                    if not p.exists() or not p.is_file():
+                        raise ToolImplementationDriftError(
+                            f"Environment lockfile '{p}' was locked but is missing or inaccessible."
+                        )
+                    curr_digest = hashlib.sha256(p.read_bytes()).hexdigest()
+                    if not hmac.compare_digest(curr_digest.lower(), expected_digest.lower()):
+                        raise ToolImplementationDriftError(
+                            f"Environment lockfile '{p.name}' drift detected: "
+                            f"expected {expected_digest[:12]}, got {curr_digest[:12]}."
+                        )
 
         locked_tools = manifest.get("tools", {})
         for name, (schema, fn) in live_tools.items():
