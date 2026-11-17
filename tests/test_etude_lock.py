@@ -249,3 +249,47 @@ def main_tool(x):
     assert sinks1 == ()
     assert sinks2 == ()
 
+
+def test_etude_lock_class_method_and_attribute_helpers():
+    class LocalMathService:
+        @staticmethod
+        def compute_core(x):
+            return x * 10
+
+    def tool_using_class(x):
+        return LocalMathService.compute_core(x)
+
+    hash1, sinks1 = analyze_Python_tool_ast(tool_using_class)
+
+    class LocalMathServiceMutated:
+        @staticmethod
+        def compute_core(x):
+            return x * 999
+
+    def tool_using_mutated_class(x):
+        return LocalMathServiceMutated.compute_core(x)
+
+    hash2, sinks2 = analyze_Python_tool_ast(tool_using_mutated_class)
+    assert hash1 != hash2
+
+    class_source_clean = """
+class Worker:
+    def helper(self, x):
+        return x + 1
+
+    def run(self, x):
+        return self.helper(x)
+"""
+    class_source_tampered = """
+class Worker:
+    def helper(self, x):
+        return x + 999
+
+    def run(self, x):
+        return self.helper(x)
+"""
+    chash1, _ = analyze_Python_tool_ast(class_source_clean)
+    chash2, _ = analyze_Python_tool_ast(class_source_tampered)
+    assert chash1 != chash2
+
+

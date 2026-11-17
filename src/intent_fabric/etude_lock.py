@@ -511,6 +511,19 @@ def _extract_source(fn_or_source: Any) -> str:
     return inspect.getsource(fn_or_source) if callable(fn_or_source) else str(fn_or_source)
 
 
+def _is_same_module_or_package(mod_a: Optional[str], mod_b: Optional[str]) -> bool:
+    """Return True if two module paths belong to the same package hierarchy."""
+    if not mod_a or not mod_b:
+        return False
+    if mod_a == mod_b:
+        return True
+    if mod_b in ("builtins", "_thread", "sys", "os", "math", "typing"):
+        return False
+    pkg_a = mod_a.split(".")[0]
+    pkg_b = mod_b.split(".")[0]
+    return bool(pkg_a and pkg_b and pkg_a == pkg_b)
+
+
 def _find_transitive_helpers(func: Any, visited: Optional[Set[Any]] = None) -> Dict[str, Any]:
     """Find transitive local helper callables called within the same module/package."""
     if not callable(func):
@@ -523,8 +536,6 @@ def _find_transitive_helpers(func: Any, visited: Optional[Set[Any]] = None) -> D
 
     mod_name = getattr(func, "__module__", None)
     globs = getattr(func, "__globals__", {})
-    if not globs:
-        return {}
 
     try:
         raw_src = textwrap.dedent(inspect.getsource(func))
@@ -532,17 +543,31 @@ def _find_transitive_helpers(func: Any, visited: Optional[Set[Any]] = None) -> D
     except Exception:
         return {}
 
+    self_or_cls = getattr(func, "__self__", None)
     helpers: Dict[str, Any] = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            callee_name = node.func.id
-            callee = globs.get(callee_name)
+        if isinstance(node, ast.Call):
+            callee = None
+            callee_name = ""
+            if isinstance(node.func, ast.Name):
+                callee_name = node.func.id
+                callee = globs.get(callee_name)
+            elif isinstance(node.func, ast.Attribute):
+                callee_name = node.func.attr
+                if isinstance(node.func.value, ast.Name):
+                    base_name = node.func.value.id
+                    if base_name in ("self", "cls") and self_or_cls is not None:
+                        callee = getattr(self_or_cls, callee_name, None)
+                    elif base_name in globs:
+                        container = globs[base_name]
+                        callee = getattr(container, callee_name, None)
+
             if (
                 callee is not None
                 and callable(callee)
                 and callee is not func
-                and getattr(callee, "__module__", None) == mod_name
                 and getattr(callee, "__module__", None) != "builtins"
+                and _is_same_module_or_package(mod_name, getattr(callee, "__module__", None))
             ):
                 helpers[callee_name] = callee
                 transitive = _find_transitive_helpers(callee, visited)
@@ -552,21 +577,34 @@ def _find_transitive_helpers(func: Any, visited: Optional[Set[Any]] = None) -> D
 
 
 def _find_helpers_in_source(source: str) -> Dict[str, str]:
-    """Find helper functions in a multi-function source string."""
+    """Find helper functions and class methods in a multi-callable source string."""
     try:
         tree = ast.parse(unicodedata.normalize("NFC", textwrap.dedent(source)))
     except Exception:
         return {}
-    fn_defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    fn_defs: Dict[str, ast.AST] = {}
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fn_defs[n.name] = n
+        elif isinstance(n, ast.ClassDef):
+            fn_defs[n.name] = n
+            for member in n.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    fn_defs[f"{n.name}.{member.name}"] = member
+                    fn_defs[member.name] = member
     if len(fn_defs) <= 1:
         return {}
     helpers: Dict[str, str] = {}
-    for name, fn_node in fn_defs.items():
-        for child in ast.walk(fn_node):
-            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
-                called = child.func.id
-                if called in fn_defs and called != name:
-                    helpers[called] = ast.unparse(fn_defs[called])
+    for name, node_def in fn_defs.items():
+        for child in ast.walk(node_def):
+            if isinstance(child, ast.Call):
+                called_name = ""
+                if isinstance(child.func, ast.Name):
+                    called_name = child.func.id
+                elif isinstance(child.func, ast.Attribute):
+                    called_name = child.func.attr
+                if called_name in fn_defs and called_name != name:
+                    helpers[called_name] = ast.unparse(fn_defs[called_name])
     return helpers
 
 
