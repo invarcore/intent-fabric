@@ -203,12 +203,13 @@ def resolve_and_check_path(
     path: str | os.PathLike[str],
     forbidden_roots: Iterable[str],
     *,
-    base_dir: str | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
 ) -> str:
     """AUTHORITATIVE check: call this in the tool executor right before open().
     Resolves symlinks and '..' on the real filesystem, then compares real paths.
     """
-    real = os.path.realpath(os.path.join(base_dir or os.getcwd(), os.fspath(path)))
+    resolved_base = os.fspath(base_dir) if base_dir else os.getcwd()
+    real = os.path.realpath(os.path.join(resolved_base, os.fspath(path)))
     for root in forbidden_roots:
         r = os.path.realpath(root)
         if real == r or real.startswith(r.rstrip(os.sep) + os.sep):

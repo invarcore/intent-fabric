@@ -136,13 +136,15 @@ class GovernedPolicyExecutor:
                 require_model_version=require_model_version,
             )
 
-        evidence_package = effective_evidence if isinstance(effective_evidence, Mapping) else {}
+        pkg: Dict[str, Any] = (
+            dict(effective_evidence) if isinstance(effective_evidence, Mapping) else {}
+        )
         intent_goal = str(effective_goal)
         actual_max_age = (
             context_or_max_age if isinstance(context_or_max_age, (int, float)) else max_age_seconds
         )
 
-        retrieval_id = evidence_package.get("retrieval_id")
+        retrieval_id = pkg.get("retrieval_id")
 
         # 1. Anti-Replay Guard
         if not retrieval_id:
@@ -160,7 +162,7 @@ class GovernedPolicyExecutor:
             )
 
         # Ensure evidence package is not empty in governed planning
-        chunks_present = evidence_package.get("chunks") or evidence_package.get("items")
+        chunks_present = pkg.get("chunks") or pkg.get("items")
         if not chunks_present:
             return GovernedExecutionResult(
                 is_authorized=False,
@@ -170,7 +172,7 @@ class GovernedPolicyExecutor:
             )
 
         # 2. Cryptographic and Freshness Verification
-        verification = verify_evidence_package(evidence_package, max_age_seconds=actual_max_age)
+        verification = verify_evidence_package(pkg, max_age_seconds=actual_max_age)
         if not verification.is_valid:
             return GovernedExecutionResult(
                 is_authorized=False,
@@ -185,7 +187,7 @@ class GovernedPolicyExecutor:
 
         # 3. Evidence-Grounded Planning
         items: List[EvidenceItemReference] = []
-        for ch in evidence_package.get("chunks", []):
+        for ch in pkg.get("chunks", []):
             item = EvidenceItemReference(
                 chunk_id=ch.get("chunk_id", 0),
                 document_uri=ch.get("source_uri") or ch.get("document_uri") or "",
@@ -203,10 +205,10 @@ class GovernedPolicyExecutor:
         evidence_ref = EvidencePackageReference(
             query_text=intent_goal,
             items=items,
-            retrieval_summary=evidence_package.get("retrieval_summary", {}),
-            provenance_digest=evidence_package.get("provenance_digest", ""),
-            query_fingerprint=evidence_package.get("query_fingerprint", ""),
-            generated_at=evidence_package.get("generated_at", ""),
+            retrieval_summary=pkg.get("retrieval_summary", {}),
+            provenance_digest=pkg.get("provenance_digest", ""),
+            query_fingerprint=pkg.get("query_fingerprint", ""),
+            generated_at=pkg.get("generated_at", ""),
         )
         plan = (
             self.planner.create_plan(intent=intent_req, evidence=evidence_ref)
@@ -256,8 +258,8 @@ class GovernedPolicyExecutor:
             token = (
                 self.signer.sign_execution(
                     plan_id=plan.plan_id if plan else "plan-unknown",
-                    provenance_digest=evidence_package["provenance_digest"],
-                    tenant_id=evidence_package["tenant_id"],
+                    provenance_digest=pkg["provenance_digest"],
+                    tenant_id=pkg["tenant_id"],
                 )
                 if self.signer
                 else None
@@ -271,9 +273,10 @@ class GovernedPolicyExecutor:
             )
 
         # Fail-closed for REQUIRES_APPROVAL or DENY
+        reasons_list = getattr(decision, "reasons", None) if decision is not None else None
         reason = (
-            getattr(decision, "reason", None)
-            or (decision.reasons[0] if getattr(decision, "reasons", None) else None)
+            (getattr(decision, "reason", None) if decision is not None else None)
+            or (reasons_list[0] if reasons_list else None)
             or "Policy rejected plan execution"
         )
         return GovernedExecutionResult(
@@ -298,14 +301,15 @@ class GovernedPolicyExecutor:
     ) -> Any:
         """Executes a registered tool under policy governance and cryptographic constraints."""
         # 1. Policy check
-        if hasattr(self.policy_engine, "evaluate"):
+        evaluate_fn: Any = getattr(self.policy_engine, "evaluate", None)
+        if callable(evaluate_fn):
             try:
-                decision = self.policy_engine.evaluate(
+                tool_decision: Any = evaluate_fn(
                     tool_name=tool_name, tool_args=tool_args, context=context
                 )
-                if hasattr(decision, "allowed") and not decision.allowed:
+                if hasattr(tool_decision, "allowed") and not getattr(tool_decision, "allowed"):
                     raise PermissionError(
-                        getattr(decision, "reason", "Policy rejected tool execution")
+                        getattr(tool_decision, "reason", "Policy rejected tool execution")
                     )
             except TypeError:
                 pass

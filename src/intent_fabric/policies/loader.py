@@ -112,14 +112,16 @@ class PolicyRuleLoader:
 
         self._ruleset: PolicyRuleSet | None = None
         self._last_mtime: float = 0.0
+        self._last_sig: tuple[int, int] | None = None
         self._load()
 
     def get(self) -> PolicyRuleSet:
         """Return the current PolicyRuleSet, reloading from disk if modified."""
         if self._path is not None and self._path.exists():
             try:
-                mtime = self._path.stat().st_mtime
-                if mtime != self._last_mtime:
+                st = self._path.stat()
+                sig = (st.st_mtime_ns, st.st_size)
+                if sig != self._last_sig:
                     self._load()
             except OSError:
                 pass  # keep the last-loaded ruleset on stat failure
@@ -129,11 +131,13 @@ class PolicyRuleLoader:
     def _load(self) -> None:
         if self._path is not None and self._path.exists():
             try:
+                st = self._path.stat()
                 raw = yaml.safe_load(self._path.read_text(encoding="utf-8"))
                 raw_rules = raw.get("rules", []) if isinstance(raw, dict) else []
                 rules = _parse_rules(raw_rules)
                 self._ruleset = PolicyRuleSet(rules=rules)
-                self._last_mtime = self._path.stat().st_mtime
+                self._last_mtime = st.st_mtime
+                self._last_sig = (st.st_mtime_ns, st.st_size)
                 return
             except Exception:
                 pass  # fall through to defaults on any parse error
@@ -141,3 +145,4 @@ class PolicyRuleLoader:
         # Use built-in defaults
         self._ruleset = PolicyRuleSet(rules=_parse_rules(_DEFAULT_RULES))
         self._last_mtime = time.monotonic()
+        self._last_sig = None

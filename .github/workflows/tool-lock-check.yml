@@ -26,11 +26,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --all-extras
 
       - name: Verify CLI lockfile regression tests & project lockfile (if present)
         run: |
-          uv run pytest tests/test_cli_lock_workflow.py -q
+          uv run pytest tests/test_cli_lock_workflow.py -q --no-cov
           if [ -f "agent-tools.lock" ]; then
             uv run intent-fabric lock check src --lockfile agent-tools.lock
           else
