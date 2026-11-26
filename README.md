@@ -75,7 +75,7 @@ Enterprise engineering and security leaders want the productivity of autonomous 
 | **Brittle Prompt Guardrails**: Safety rules are embedded in natural language system prompts (*"Please do not delete data"*), easily bypassed by jailbreaks. | **Out-of-Band YAML Policy Engine**: Hard deterministic evaluation rules with glob patterns, priority weighting, and hot-reloading that evaluate actions independently of the LLM. |
 | **Binary All-or-Nothing Execution**: If an action is risky, the entire agent run crashes or blindly proceeds without oversight. | **Human-in-the-Loop Approval Packages**: Generates structured, tamper-evident approval requests (`requires_approval`) routed to human reviewers in Slack, Jira, or the Visual Admin Console. |
 | **Vulnerable to Indirect Prompt Injection**: Adversarial text hidden inside retrieved documents hijacks the agent's planning logic. | **XML Evidence Sandboxing**: Strict evidence boundaries (`<retrieved_evidence>`) isolate untrusted data from instructions, backed by syntax sanitization (`^[a-zA-Z0-9_.:-]{1,128}$`). |
-| **Non-Repudiation Failure**: No cryptographic proof of who authorized a production state mutation. | **HMAC-SHA256 Cryptographic Tokens**: Every human approval decision generates a signed, tamper-evident cryptographic token verified by execution adapters. |
+| **Tamper-Evident Auditability & Non-Repudiation** | No cryptographic proof of who authorized a production state mutation. | **Ed25519 Asymmetric Non-Repudiation & HMAC-SHA256 Keyed Integrity**: Approval decisions and locks support symmetric HMAC-SHA256 verification and Ed25519 asymmetric signatures for non-repudiation. |
 | **Vendor Lock-In**: Frameworks tie planning loops to proprietary cloud APIs. | **Local & Multi-Cloud Planner Support**: Runs locally and privately with Ollama (Llama 3, Mistral), with drop-in support for OpenRouter (free tier & multi-model routing), OpenAI, Gemini, and Azure AI Foundry. |
 
 ---
@@ -129,9 +129,9 @@ flowchart TB
 
 ---
 
-## Cryptographic Non-Repudiation (HMAC-SHA256)
+## Cryptographic Keyed Integrity (HMAC-SHA256) & Asymmetric Non-Repudiation (Ed25519)
 
-When an action requires human review, Intent Fabric generates a structured `ApprovalPackage`. Once approved by an authorized reviewer, an HMAC-SHA256 signature is generated:
+When an action requires human review, Intent Fabric generates a structured `ApprovalPackage`. Once approved by an authorized reviewer, a keyed HMAC-SHA256 integrity signature (or an Ed25519 asymmetric signature when multi-party non-repudiation is required) is generated:
 
 ```json
 {
@@ -147,7 +147,7 @@ When an action requires human review, Intent Fabric generates a structured `Appr
 }
 ```
 
-Downstream enterprise execution adapters verify this cryptographic token before committing any mutative state changes, guaranteeing full auditability and non-repudiation for SOC 2 Type II compliance.
+Downstream enterprise execution adapters verify this cryptographic token before committing any mutative state changes, guaranteeing keyed authenticity and tamper-evident auditability (use Ed25519 when non-repudiation is required across organizational boundaries).
 
 ---
 
@@ -407,7 +407,7 @@ Intent Fabric exposes planning and governance tools conforming to the open MCP s
 | `validate_plan` | `plan` (dict) | Evaluates all plan steps against active policy rules and returns a consolidated decision. |
 | `create_approval_package` | `plan` (dict), `decision` (dict), `requested_by` (str) | Assembles a tamper-evident approval payload for human sign-off. |
 | `simulate_plan` | `plan` (dict), `decision` (dict) | Simulates plan execution with zero external side effects and records state traces. |
-| `sign_approval` | `approval_id` (str), `plan_id` (str), `step_ids` (list[str]), `decision` (str), `reviewer` (str), `timestamp` (str\|null) | Generates a deterministic HMAC-SHA256 non-repudiation signature over the approval decision. |
+| `sign_approval` | `approval_id` (str), `plan_id` (str), `step_ids` (list[str]), `decision` (str), `reviewer` (str), `timestamp` (str\|null) | Generates a deterministic HMAC-SHA256 keyed integrity signature (symmetric authenticity) over the approval decision. |
 | `health_check` | *None* | Verifies planner provider health and policy rule engine status. |
 
 ---

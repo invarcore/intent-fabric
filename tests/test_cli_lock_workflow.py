@@ -68,3 +68,54 @@ def test_cli_lock_short_key(tmp_path: Path):
     tools_dir.mkdir()
     rc = main(["lock", "generate", str(tools_dir), "-k", "short"])
     assert rc == 1
+
+
+def test_cli_lock_missing_key_fails_closed_without_crash(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("ETUDE_LOCK_SECRET", raising=False)
+    monkeypatch.delenv("INTENT_FABRIC_LOCK_KEY", raising=False)
+    tools_dir = tmp_path / "tools_no_key"
+    tools_dir.mkdir()
+    (tools_dir / "helper.py").write_text("def ping(x: int) -> int:\n    return x\n", encoding="utf-8")
+    out_lock = tmp_path / "agent-tools.lock"
+
+    rc = main(["lock", "generate", str(tools_dir), "-o", str(out_lock)])
+    assert rc == 1
+    assert not out_lock.exists()
+
+    rc_unsigned = main(["lock", "generate", str(tools_dir), "-o", str(out_lock), "--allow-unsigned"])
+    assert rc_unsigned == 0
+    assert out_lock.exists()
+
+
+def test_cli_lock_discovers_class_methods_and_colliding_names(tmp_path: Path):
+    tools_dir = tmp_path / "pkg_tools"
+    tools_dir.mkdir()
+    (tools_dir / "alpha.py").write_text(
+        "class ClientA:\n"
+        "    def execute(self, query: str) -> str:\n"
+        "        return query\n\n"
+        "def run_job(job_id: int) -> int:\n"
+        "    return job_id\n",
+        encoding="utf-8",
+    )
+    (tools_dir / "beta.py").write_text(
+        "def run_job(task: str) -> str:\n"
+        "    return task\n",
+        encoding="utf-8",
+    )
+    out_lock = tmp_path / "multi.lock"
+    key = "b" * 32
+
+    rc_gen = main(["lock", "generate", str(tools_dir), "-o", str(out_lock), "-k", key])
+    assert rc_gen == 0
+
+    import json
+
+    lock_data = json.loads(out_lock.read_text(encoding="utf-8"))
+    locked_names = set(lock_data["locks"].keys())
+    assert "ClientA.execute" in locked_names
+    assert "alpha.py::run_job" in locked_names
+    assert "beta.py::run_job" in locked_names
+
+    rc_chk = main(["lock", "check", str(tools_dir), "-l", str(out_lock), "-k", key])
+    assert rc_chk == 0
