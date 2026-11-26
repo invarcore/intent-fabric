@@ -21,9 +21,12 @@ def test_valid_sign_and_verify_plus_replay_rejection():
         ttl_seconds=30.0,
         now_fn=lambda: clock[0],
     )
-    assert verify_inter_agent_envelope(
-        env, SECRET, seen, expected_recipient="executor-agent", now_fn=lambda: clock[0]
-    ) is True
+    assert (
+        verify_inter_agent_envelope(
+            env, SECRET, seen, expected_recipient="executor-agent", now_fn=lambda: clock[0]
+        )
+        is True
+    )
 
     # Second replay of identical envelope MUST fail closed (INV-04)
     with pytest.raises(NonceReplayError, match="already consumed"):

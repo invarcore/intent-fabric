@@ -20,14 +20,18 @@ def test_matches_exact():
 
 
 def test_matches_glob_prefix():
-    rule = PolicyRule(action_pattern="ticket_*", decision=RuleDecision.REQUIRES_APPROVAL, reason="test")
+    rule = PolicyRule(
+        action_pattern="ticket_*", decision=RuleDecision.REQUIRES_APPROVAL, reason="test"
+    )
     assert rule.matches("ticket_create")
     assert rule.matches("ticket_update")
     assert not rule.matches("notification_send")
 
 
 def test_matches_wildcard_catches_all():
-    rule = PolicyRule(action_pattern="*", decision=RuleDecision.REQUIRES_APPROVAL, reason="safe default")
+    rule = PolicyRule(
+        action_pattern="*", decision=RuleDecision.REQUIRES_APPROVAL, reason="safe default"
+    )
     assert rule.matches("anything")
     assert rule.matches("db_drop")
 
@@ -62,7 +66,9 @@ def _ruleset_from_rules(rules: list[PolicyRule]) -> PolicyRuleSet:
 
 def test_evaluate_deny_wins_highest_priority():
     rules = [
-        PolicyRule(action_pattern="db_drop", decision=RuleDecision.DENY, reason="hard deny", priority=100),
+        PolicyRule(
+            action_pattern="db_drop", decision=RuleDecision.DENY, reason="hard deny", priority=100
+        ),
         PolicyRule(action_pattern="*", decision=RuleDecision.ALLOW, reason="allow all", priority=0),
     ]
     rs = _ruleset_from_rules(rules)
@@ -73,8 +79,18 @@ def test_evaluate_deny_wins_highest_priority():
 
 def test_evaluate_allow_when_no_deny():
     rules = [
-        PolicyRule(action_pattern="analysis_review", decision=RuleDecision.ALLOW, reason="safe", priority=10),
-        PolicyRule(action_pattern="*", decision=RuleDecision.REQUIRES_APPROVAL, reason="default", priority=-1),
+        PolicyRule(
+            action_pattern="analysis_review",
+            decision=RuleDecision.ALLOW,
+            reason="safe",
+            priority=10,
+        ),
+        PolicyRule(
+            action_pattern="*",
+            decision=RuleDecision.REQUIRES_APPROVAL,
+            reason="default",
+            priority=-1,
+        ),
     ]
     rs = _ruleset_from_rules(rules)
     decision, reason = rs.evaluate("analysis_review")
@@ -83,7 +99,12 @@ def test_evaluate_allow_when_no_deny():
 
 def test_evaluate_requires_approval_default():
     rules = [
-        PolicyRule(action_pattern="*", decision=RuleDecision.REQUIRES_APPROVAL, reason="safe default", priority=-1),
+        PolicyRule(
+            action_pattern="*",
+            decision=RuleDecision.REQUIRES_APPROVAL,
+            reason="safe default",
+            priority=-1,
+        ),
     ]
     rs = _ruleset_from_rules(rules)
     decision, reason = rs.evaluate("unknown_action_type")
@@ -99,8 +120,15 @@ def test_evaluate_no_matching_rule_falls_back():
 
 def test_evaluate_highest_priority_wins():
     rules = [
-        PolicyRule(action_pattern="ticket_*", decision=RuleDecision.DENY, reason="deny override", priority=50),
-        PolicyRule(action_pattern="ticket_*", decision=RuleDecision.ALLOW, reason="allow base", priority=5),
+        PolicyRule(
+            action_pattern="ticket_*",
+            decision=RuleDecision.DENY,
+            reason="deny override",
+            priority=50,
+        ),
+        PolicyRule(
+            action_pattern="ticket_*", decision=RuleDecision.ALLOW, reason="allow base", priority=5
+        ),
     ]
     rs = _ruleset_from_rules(rules)
     decision, reason = rs.evaluate("ticket_create")
@@ -113,6 +141,7 @@ def test_evaluate_highest_priority_wins():
 
 def test_loader_uses_defaults_when_no_file():
     from intent_fabric.policies.loader import PolicyRuleLoader
+
     loader = PolicyRuleLoader(rules_path=None)
     rs = loader.get()
     # Default rules should deny db_drop
@@ -122,8 +151,10 @@ def test_loader_uses_defaults_when_no_file():
 
 def test_loader_reads_yaml_file(tmp_path: Path):
     from intent_fabric.policies.loader import PolicyRuleLoader
+
     rules_file = tmp_path / "rules.yaml"
-    rules_file.write_text(textwrap.dedent("""\
+    rules_file.write_text(
+        textwrap.dedent("""\
         rules:
           - action_pattern: "custom_action"
             decision: allow
@@ -133,7 +164,8 @@ def test_loader_reads_yaml_file(tmp_path: Path):
             decision: deny
             reason: "Everything else denied."
             priority: -1
-    """))
+    """)
+    )
     loader = PolicyRuleLoader(rules_path=rules_file)
     rs = loader.get()
     allow_d, _ = rs.evaluate("custom_action")
@@ -147,25 +179,29 @@ def test_loader_hot_reloads_on_mtime_change(tmp_path: Path):
     from intent_fabric.policies.loader import PolicyRuleLoader
 
     rules_file = tmp_path / "rules.yaml"
-    rules_file.write_text(textwrap.dedent("""\
+    rules_file.write_text(
+        textwrap.dedent("""\
         rules:
           - action_pattern: "*"
             decision: allow
             reason: "Allow all initially."
-    """))
+    """)
+    )
     loader = PolicyRuleLoader(rules_path=rules_file)
     d1, _ = loader.get().evaluate("any_action")
     assert d1 == RuleDecision.ALLOW
 
     # Rewrite with deny-all — simulate file change
     time.sleep(0.05)  # ensure mtime changes
-    rules_file.write_text(textwrap.dedent("""\
+    rules_file.write_text(
+        textwrap.dedent("""\
         rules:
           - action_pattern: "*"
             decision: deny
             reason: "Deny all after update."
             priority: 100
-    """))
+    """)
+    )
     # Touch mtime explicitly to be safe
     rules_file.touch()
 

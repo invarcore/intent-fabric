@@ -19,9 +19,20 @@ _DOT = _BS + "."
 _ESC_BS = _BS + _BS
 NO_LEADING_FLAG_PATTERN = r"^(?!-).*$"
 JAILED_PATH_PATTERN = (
-    "^(?!.*(?:^" + _PIPE + "/" + _PIPE + _ESC_BS + ")"
-    + _DOT + _DOT
-    + "(?:$" + _PIPE + "/" + _PIPE + _ESC_BS + "))"
+    "^(?!.*(?:^"
+    + _PIPE
+    + "/"
+    + _PIPE
+    + _ESC_BS
+    + ")"
+    + _DOT
+    + _DOT
+    + "(?:$"
+    + _PIPE
+    + "/"
+    + _PIPE
+    + _ESC_BS
+    + "))"
     + "(?!/)(?![A-Za-z]:).*$"
 )
 
@@ -95,7 +106,9 @@ def _validate_secret_key(secret_key: Optional[str]) -> bytes:
 def _has_traversal_or_abs(val: str) -> bool:
     norm = val.replace(_BS, "/")
     segments = [s for s in norm.split("/") if s]
-    return ".." in segments or norm.startswith("/") or (operator.gt(len(norm), 1) and norm[1] == ":")
+    return (
+        ".." in segments or norm.startswith("/") or (operator.gt(len(norm), 1) and norm[1] == ":")
+    )
 
 
 def _classify_parameter_override(path: str, prop: Any, appr: Any) -> ParameterOverrideEntry:
@@ -205,16 +218,12 @@ def _apply_rule_to_leaf(rule: Dict[str, Any], ov: ParameterOverrideEntry) -> Non
     if ov.override_kind == "VALUE_CLAMPED" and isinstance(ov.approved_value, (int, float)):
         current_max = rule.get("maximum")
         rule["maximum"] = (
-            min(current_max, ov.approved_value)
-            if current_max is not None
-            else ov.approved_value
+            min(current_max, ov.approved_value) if current_max is not None else ov.approved_value
         )
     elif ov.override_kind == "VALUE_RAISED_MIN" and isinstance(ov.approved_value, (int, float)):
         current_min = rule.get("minimum")
         rule["minimum"] = (
-            max(current_min, ov.approved_value)
-            if current_min is not None
-            else ov.approved_value
+            max(current_min, ov.approved_value) if current_min is not None else ov.approved_value
         )
     elif ov.override_kind == "FLAG_STRIPPED":
         rule["pattern"] = NO_LEADING_FLAG_PATTERN
@@ -238,7 +247,11 @@ def synthesize_json_schema_patch(
     constraint tree, enforcing single-tool scope isolation.
     """
     if not receipts:
-        return {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {}}
+        return {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {},
+        }
 
     target_tool = nfc_normalize(expected_tool_name or receipts[0].tool_name)
     root_schema: Dict[str, Any] = {

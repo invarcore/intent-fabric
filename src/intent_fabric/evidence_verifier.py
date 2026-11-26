@@ -37,9 +37,7 @@ def _length_prefixed_utf8(value: str) -> str:
     return f"{len(utf8_bytes)}:{normalized}"
 
 
-def compute_canonical_provenance_bytes(
-    tenant_id: str, chunks: Sequence[EvidenceChunk]
-) -> bytes:
+def compute_canonical_provenance_bytes(tenant_id: str, chunks: Sequence[EvidenceChunk]) -> bytes:
     """INT-01 Fix: Length-prefixed RFC 8785 canonical JSON provenance serialization."""
     if not tenant_id or not tenant_id.strip():
         raise VerificationError("Tenant ID is mandatory for provenance calculation.")
@@ -57,9 +55,9 @@ def compute_canonical_provenance_bytes(
         "tenant_id": _length_prefixed_utf8(norm_tenant),
         "v": "rfc8785-v1",
     }
-    return json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def sign_evidence_package(
@@ -71,9 +69,7 @@ def sign_evidence_package(
             "Signing key is mandatory; unkeyed provenance fallback is forbidden."
         )
     canonical_bytes = compute_canonical_provenance_bytes(tenant_id, chunks)
-    return hmac.new(
-        secret_key.encode("utf-8"), canonical_bytes, hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret_key.encode("utf-8"), canonical_bytes, hashlib.sha256).hexdigest()
 
 
 def verify_evidence_package(
@@ -85,10 +81,7 @@ def verify_evidence_package(
     """Fail-closed constant-time verification of RFC 8785 provenance signature."""
     if not signature or not signature.strip():
         raise VerificationError("Provenance signature is mandatory.")
-    expected_mac = sign_evidence_package(
-        chunks=chunks, secret_key=secret_key, tenant_id=tenant_id
-    )
+    expected_mac = sign_evidence_package(chunks=chunks, secret_key=secret_key, tenant_id=tenant_id)
     if not hmac.compare_digest(expected_mac.lower(), signature.strip().lower()):
         raise VerificationError("Provenance HMAC verification failed.")
     return True
-

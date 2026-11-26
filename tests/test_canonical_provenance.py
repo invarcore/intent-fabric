@@ -51,30 +51,31 @@ def test_prevents_delimiter_collision_and_handles_multibyte_utf8():
 
 
 def test_roundtrip_hmac_verification_and_tamper_rejection():
-    chunks = [
-        EvidenceChunk(chunk_id="c1", source_uri="s3://tenant-a/1.md", content_hash="1" * 64)
-    ]
+    chunks = [EvidenceChunk(chunk_id="c1", source_uri="s3://tenant-a/1.md", content_hash="1" * 64)]
     sig = sign_evidence_package(chunks, secret_key="super-secret-key", tenant_id="tenant-a")
-    assert verify_evidence_package(chunks, signature=sig, secret_key="super-secret-key", tenant_id="tenant-a") is True
+    assert (
+        verify_evidence_package(
+            chunks, signature=sig, secret_key="super-secret-key", tenant_id="tenant-a"
+        )
+        is True
+    )
 
     # Cross-tenant replay must fail closed
     with pytest.raises(VerificationError, match="Provenance HMAC verification failed"):
-        verify_evidence_package(chunks, signature=sig, secret_key="super-secret-key", tenant_id="tenant-b")
+        verify_evidence_package(
+            chunks, signature=sig, secret_key="super-secret-key", tenant_id="tenant-b"
+        )
 
 
 def test_missing_or_empty_tenant_id_raises():
-    chunks = [
-        EvidenceChunk(chunk_id="c1", source_uri="s3://t/1.md", content_hash="1" * 64)
-    ]
+    chunks = [EvidenceChunk(chunk_id="c1", source_uri="s3://t/1.md", content_hash="1" * 64)]
     for bad_tenant in ["", "   "]:
         with pytest.raises(VerificationError, match="Tenant ID is mandatory"):
             compute_canonical_provenance_bytes(bad_tenant, chunks)
 
 
 def test_missing_or_empty_signature_raises():
-    chunks = [
-        EvidenceChunk(chunk_id="c1", source_uri="s3://t/1.md", content_hash="1" * 64)
-    ]
+    chunks = [EvidenceChunk(chunk_id="c1", source_uri="s3://t/1.md", content_hash="1" * 64)]
     for bad_sig in ["", "   "]:
         with pytest.raises(VerificationError, match="Provenance signature is mandatory"):
             verify_evidence_package(chunks, signature=bad_sig, secret_key="key")
@@ -84,9 +85,18 @@ def test_producer_consumer_symmetry_with_rfc8785_payload():
     # Producer payload emitted with document_uri alias
     raw_producer_items = [
         {"chunk_id": "c1", "source_uri": "s3://tenant-x/report.md", "content_hash": "deadbeef" * 8},
-        {"chunk_id": "c2", "document_uri": "s3://tenant-x/data.csv", "content_hash": "cafebabe" * 8},
+        {
+            "chunk_id": "c2",
+            "document_uri": "s3://tenant-x/data.csv",
+            "content_hash": "cafebabe" * 8,
+        },
     ]
     # Ingested into EvidenceChunk consumer models
     chunks = [EvidenceChunk.model_validate(item) for item in raw_producer_items]
     sig = sign_evidence_package(chunks, secret_key="shared-secret", tenant_id="tenant-x")
-    assert verify_evidence_package(chunks, signature=sig, secret_key="shared-secret", tenant_id="tenant-x") is True
+    assert (
+        verify_evidence_package(
+            chunks, signature=sig, secret_key="shared-secret", tenant_id="tenant-x"
+        )
+        is True
+    )

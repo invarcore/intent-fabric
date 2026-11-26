@@ -188,4 +188,3 @@ def test_nonce_ledger_capacity_eviction_and_expiry() -> None:
 def test_rfc8785_canonical_bytes_structures() -> None:
     b = rfc8785_canonical_bytes({"nested": ["a", "b"], "k": 1})
     assert b == b'{"k":1,"nested":["a","b"]}'
-

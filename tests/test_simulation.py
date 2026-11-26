@@ -39,7 +39,9 @@ def test_simulation_allow() -> None:
 
 def test_simulation_requires_approval() -> None:
     executor = SimulationExecutor()
-    decision = PolicyDecision(plan_id="plan_x", decision=PolicyDecisionType.REQUIRES_APPROVAL, requires_approval=True)
+    decision = PolicyDecision(
+        plan_id="plan_x", decision=PolicyDecisionType.REQUIRES_APPROVAL, requires_approval=True
+    )
     result = executor.simulate(plan=_sample_plan(), decision=decision)
     assert result.status == "pending_approval"
     assert result.executed_steps == []

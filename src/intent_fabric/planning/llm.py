@@ -105,7 +105,9 @@ def _build_user_message(intent: IntentRequest, evidence: EvidencePackageReferenc
     )
 
 
-def _parse_llm_plan(raw_json: str, intent: IntentRequest, evidence: EvidencePackageReference) -> Plan:
+def _parse_llm_plan(
+    raw_json: str, intent: IntentRequest, evidence: EvidencePackageReference
+) -> Plan:
     """Parse LLM JSON output into a Plan, falling back gracefully on parse errors."""
     try:
         data = json.loads(raw_json.strip())
@@ -130,7 +132,12 @@ def _parse_llm_plan(raw_json: str, intent: IntentRequest, evidence: EvidencePack
         step_id = _stable_id("step", f"{plan_id}:{index}")
         contract_id = _stable_id("contract", step_id)
         raw_action = str(raw_step.get("action_type", "analysis_review")).strip().lower()
-        if not is_valid_action_syntax(raw_action) or raw_action not in {"ticket_create", "document_update", "notification_send", "analysis_review"}:
+        if not is_valid_action_syntax(raw_action) or raw_action not in {
+            "ticket_create",
+            "document_update",
+            "notification_send",
+            "analysis_review",
+        }:
             action_type = "analysis_review"
         else:
             action_type = raw_action
@@ -344,19 +351,15 @@ class GeminiLLMPlanner:
 
     def create_plan(self, intent: IntentRequest, evidence: EvidencePackageReference) -> Plan:
         user_message = _build_user_message(intent, evidence)
-        body = json.dumps({
-            "contents": [
-                {
-                    "parts": [
-                        {"text": _SYSTEM_PROMPT + "\n\n" + user_message}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.2,
-                "responseMimeType": "application/json",
-            },
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "contents": [{"parts": [{"text": _SYSTEM_PROMPT + "\n\n" + user_message}]}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "responseMimeType": "application/json",
+                },
+            }
+        ).encode("utf-8")
         model_name = self._model.removeprefix("models/")
         request = urllib.request.Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self._api_key}",
@@ -395,9 +398,7 @@ class FoundryLocalLLMPlanner:
     @classmethod
     def from_env(cls) -> FoundryLocalLLMPlanner:
         return cls(
-            model=os.environ.get(
-                "FOUNDRY_PLAN_MODEL", "mistral-nemo-12b-instruct-generic-gpu"
-            ),
+            model=os.environ.get("FOUNDRY_PLAN_MODEL", "mistral-nemo-12b-instruct-generic-gpu"),
             base_url=os.environ.get("FOUNDRY_BASE_URL", "http://127.0.0.1:61633"),
         )
 

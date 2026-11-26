@@ -44,4 +44,3 @@ __all__ = [
     "verify_evidence",
     "verify_evidence_package",
 ]
-

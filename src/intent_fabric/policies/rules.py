@@ -110,10 +110,7 @@ class PolicyRuleSet:
                 ),
             )
 
-        matching = [
-            rule for rule in self.rules
-            if rule.matches(normalized, intent_metadata)
-        ]
+        matching = [rule for rule in self.rules if rule.matches(normalized, intent_metadata)]
         if not matching:
             return (
                 RuleDecision.REQUIRES_APPROVAL,
@@ -121,4 +118,3 @@ class PolicyRuleSet:
             )
         best = max(matching, key=lambda r: r.priority)
         return best.decision, best.reason
-

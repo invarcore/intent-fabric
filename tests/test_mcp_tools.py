@@ -68,7 +68,9 @@ def test_mcp_evaluate_intent_valid_evidence(client):
         "retrieval_id": "ret_mcp_1",
         "tenant_id": "tenant_default",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "chunks": [{"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}],
+        "chunks": [
+            {"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}
+        ],
         "provenance_digest": compute_package_digest([c_hash]),
     }
 
@@ -94,7 +96,14 @@ def test_mcp_evaluate_intent_tampered_fails(client):
         "retrieval_id": "ret_mcp_tampered",
         "tenant_id": "tenant_default",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "chunks": [{"chunk_id": "c1", "content": "Fake content", "source_uri": "uri", "provenance_hash": "bad_hash"}],
+        "chunks": [
+            {
+                "chunk_id": "c1",
+                "content": "Fake content",
+                "source_uri": "uri",
+                "provenance_hash": "bad_hash",
+            }
+        ],
         "provenance_digest": "0" * 64,
     }
 
@@ -120,7 +129,9 @@ def test_mcp_evaluate_intent_replay_fails(client):
         "retrieval_id": "ret_mcp_replay",
         "tenant_id": "tenant_default",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "chunks": [{"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}],
+        "chunks": [
+            {"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}
+        ],
         "provenance_digest": compute_package_digest([c_hash]),
     }
 
@@ -155,7 +166,9 @@ def test_evaluate_governed_intent_direct():
         "retrieval_id": "ret_direct_1",
         "tenant_id": "tenant_direct",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "chunks": [{"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}],
+        "chunks": [
+            {"chunk_id": "c1", "content": content, "source_uri": uri, "provenance_hash": c_hash}
+        ],
         "provenance_digest": compute_package_digest([c_hash]),
     }
     executor = GovernedPolicyExecutor(PolicyEngine(), RuleBasedPlanner(), TokenSigner())

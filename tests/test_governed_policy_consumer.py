@@ -65,7 +65,9 @@ def create_payload(retrieval_id: str = "ret_100", *, age_seconds: float = 0.0) -
 def test_allow_emits_signed_token(mock_dependencies):
     """1. ALLOW policy evaluation emits a signed execution token."""
     engine, planner, signer = mock_dependencies
-    engine.evaluate.return_value = PolicyDecision(decision_type=PolicyDecisionType.ALLOW, reason="OK")
+    engine.evaluate.return_value = PolicyDecision(
+        decision_type=PolicyDecisionType.ALLOW, reason="OK"
+    )
 
     executor = GovernedPolicyExecutor(policy_engine=engine, planner=planner, signer=signer)
     result = executor.execute("Approve invoice", create_payload())
@@ -94,7 +96,9 @@ def test_tampered_payload_fails_closed(mock_dependencies):
 def test_replay_attack_rejected(mock_dependencies):
     """3. Replay attack with same retrieval_id is rejected on subsequent attempts."""
     engine, planner, signer = mock_dependencies
-    engine.evaluate.return_value = PolicyDecision(decision_type=PolicyDecisionType.ALLOW, reason="OK")
+    engine.evaluate.return_value = PolicyDecision(
+        decision_type=PolicyDecisionType.ALLOW, reason="OK"
+    )
 
     executor = GovernedPolicyExecutor(policy_engine=engine, planner=planner, signer=signer)
     payload = create_payload(retrieval_id="ret_replay")
@@ -127,7 +131,9 @@ def test_missing_retrieval_id_fails(mock_dependencies):
 def test_policy_deny_fails_closed(mock_dependencies):
     """5. Policy DENY decision rejects execution with zero tokens emitted."""
     engine, planner, signer = mock_dependencies
-    engine.evaluate.return_value = PolicyDecision(decision_type=PolicyDecisionType.DENY, reason="Invoice exceeds policy threshold")
+    engine.evaluate.return_value = PolicyDecision(
+        decision_type=PolicyDecisionType.DENY, reason="Invoice exceeds policy threshold"
+    )
 
     executor = GovernedPolicyExecutor(policy_engine=engine, planner=planner, signer=signer)
     result = executor.execute("Approve high-value invoice", create_payload())

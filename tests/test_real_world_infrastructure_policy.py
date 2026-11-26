@@ -179,25 +179,27 @@ def test_openrouter_llm_planner_mocked_chat_completion(monkeypatch: pytest.Monke
             {
                 "message": {
                     "role": "assistant",
-                    "content": json.dumps({
-                        "summary": "Deploy Kafka cluster across multi-AZ topology",
-                        "steps": [
-                            {
-                                "title": "Inspect StatefulSet configuration",
-                                "description": "Review volumeClaimTemplates and security contexts",
-                                "action_type": "analysis_review",
-                                "target": "k8s_production_statefulset",
-                                "justification": "Verify compliance with non-root security baseline",
-                            },
-                            {
-                                "title": "Submit change ticket",
-                                "description": "Create deployment record in Jira",
-                                "action_type": "ticket_create",
-                                "target": "jira_prod",
-                                "justification": "Required audit trail for production change",
-                            },
-                        ],
-                    }),
+                    "content": json.dumps(
+                        {
+                            "summary": "Deploy Kafka cluster across multi-AZ topology",
+                            "steps": [
+                                {
+                                    "title": "Inspect StatefulSet configuration",
+                                    "description": "Review volumeClaimTemplates and security contexts",
+                                    "action_type": "analysis_review",
+                                    "target": "k8s_production_statefulset",
+                                    "justification": "Verify compliance with non-root security baseline",
+                                },
+                                {
+                                    "title": "Submit change ticket",
+                                    "description": "Create deployment record in Jira",
+                                    "action_type": "ticket_create",
+                                    "target": "jira_prod",
+                                    "justification": "Required audit trail for production change",
+                                },
+                            ],
+                        }
+                    ),
                 }
             }
         ],

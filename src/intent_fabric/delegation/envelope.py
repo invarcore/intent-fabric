@@ -61,7 +61,9 @@ class InterAgentEnvelope:
         if not sender_id or not sender_id.strip() or not recipient_id or not recipient_id.strip():
             raise InterAgentAuthError("sender_id and recipient_id are mandatory.")
         if ttl_seconds <= 0 or ttl_seconds > 60.0:
-            raise InterAgentAuthError("ttl_seconds must be in (0, 60.0] per INV-03 freshness bound.")
+            raise InterAgentAuthError(
+                "ttl_seconds must be in (0, 60.0] per INV-03 freshness bound."
+            )
 
         issued_at = float(now_fn())
         expires_at = issued_at + float(ttl_seconds)

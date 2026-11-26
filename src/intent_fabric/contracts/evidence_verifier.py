@@ -114,7 +114,9 @@ def compute_query_fingerprint(
     Formula: SHA-256(canonical_json([tenant_id, query_text, mode]))
     """
     tenant = tenant_id if tenant_id is not None else ""
-    msg = json.dumps([tenant, query_text, mode], separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    msg = json.dumps([tenant, query_text, mode], separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
     return hashlib.sha256(msg).hexdigest()
 
 
@@ -410,9 +412,7 @@ def verify_evidence(
 
     reported_digest = str(payload.get("provenance_digest", ""))
     expected_digest = compute_package_digest(recomputed_hashes)
-    digest_valid = (
-        reported_digest == expected_digest if reported_digest else len(items) == 0
-    )
+    digest_valid = reported_digest == expected_digest if reported_digest else len(items) == 0
     if not digest_valid:
         errors.append(
             f"Package digest mismatch "
@@ -447,12 +447,7 @@ def verify_evidence(
         freshness_valid = False
         errors.append("Missing timestamp field ('generated_at' or 'timestamp_utc')")
 
-    is_valid = (
-        len(failed_chunks) == 0
-        and digest_valid
-        and fingerprint_present
-        and freshness_valid
-    )
+    is_valid = len(failed_chunks) == 0 and digest_valid and fingerprint_present and freshness_valid
 
     error_reason = "; ".join(errors) if errors else None
 

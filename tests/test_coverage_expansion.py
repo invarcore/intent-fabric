@@ -48,17 +48,19 @@ from intent_fabric.serde import parse_approval_request, parse_simulation_result
 # 1. LLM Planners & Extensible Registry
 # =========================================================================
 def _sample_llm_json_plan():
-    return json.dumps({
-        "summary": "Plan for data export",
-        "steps": [
-            {
-                "action_type": "ticket_create",
-                "title": "Create change ticket",
-                "parameters": {"queue": "ops"},
-                "justification": "Required for tracking",
-            }
-        ],
-    })
+    return json.dumps(
+        {
+            "summary": "Plan for data export",
+            "steps": [
+                {
+                    "action_type": "ticket_create",
+                    "title": "Create change ticket",
+                    "parameters": {"queue": "ops"},
+                    "justification": "Required for tracking",
+                }
+            ],
+        }
+    )
 
 
 def test_llm_sanitize_and_build_user_message():
@@ -107,9 +109,7 @@ def test_openai_llm_planner_create_plan():
     intent = IntentRequest(intent_id="i1", user_request="Prepare payroll")
     evidence = EvidencePackageReference(query_text="q", items=[])
 
-    mock_resp_data = {
-        "choices": [{"message": {"content": _sample_llm_json_plan()}}]
-    }
+    mock_resp_data = {"choices": [{"message": {"content": _sample_llm_json_plan()}}]}
     mock_response = io.BytesIO(json.dumps(mock_resp_data).encode("utf-8"))
 
     with patch("urllib.request.urlopen", return_value=mock_response):
@@ -123,9 +123,7 @@ def test_gemini_llm_planner_create_plan():
     intent = IntentRequest(intent_id="i1", user_request="Prepare report")
     evidence = EvidencePackageReference(query_text="q", items=[])
 
-    mock_resp_data = {
-        "candidates": [{"content": {"parts": [{"text": _sample_llm_json_plan()}]}}]
-    }
+    mock_resp_data = {"candidates": [{"content": {"parts": [{"text": _sample_llm_json_plan()}]}}]}
     mock_response = io.BytesIO(json.dumps(mock_resp_data).encode("utf-8"))
 
     with patch("urllib.request.urlopen", return_value=mock_response):
@@ -139,9 +137,7 @@ def test_foundry_llm_planner_create_plan():
     intent = IntentRequest(intent_id="i1", user_request="Review code")
     evidence = EvidencePackageReference(query_text="q", items=[])
 
-    mock_resp_data = {
-        "choices": [{"message": {"content": _sample_llm_json_plan()}}]
-    }
+    mock_resp_data = {"choices": [{"message": {"content": _sample_llm_json_plan()}}]}
     mock_response = io.BytesIO(json.dumps(mock_resp_data).encode("utf-8"))
 
     with patch("urllib.request.urlopen", return_value=mock_response):
@@ -279,7 +275,9 @@ def test_verify_evidence_provenance_legacy_and_edge_cases():
     digest = compute_package_digest([h1])
     fingerprint = compute_query_fingerprint("search query")
     legacy_valid = {
-        "items": [{"document_uri": "doc1", "snippet": "content1", "provenance_hash": h1, "chunk_id": "c1"}],
+        "items": [
+            {"document_uri": "doc1", "snippet": "content1", "provenance_hash": h1, "chunk_id": "c1"}
+        ],
         "generated_at": naive_ts,
         "provenance_digest": digest,
         "query_fingerprint": fingerprint,
@@ -326,7 +324,10 @@ def test_signed_execution_token_and_verification():
 def test_policy_loader_env_and_exceptions(tmp_path, monkeypatch):
     # Test INTENT_POLICY_RULES env var
     rules_file = tmp_path / "custom_rules.yaml"
-    rules_file.write_text("rules:\n  - action_pattern: '*'\n    decision: allow\n    reason: Allow All\n", encoding="utf-8")
+    rules_file.write_text(
+        "rules:\n  - action_pattern: '*'\n    decision: allow\n    reason: Allow All\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("INTENT_POLICY_RULES", str(rules_file))
 
     loader_env = PolicyRuleLoader()
@@ -503,4 +504,3 @@ rules:
     bad_loader = PolicyRuleLoader(rules_path=bad_yaml)
     bad_ruleset = bad_loader.get()
     assert len(bad_ruleset.rules) > 0
-

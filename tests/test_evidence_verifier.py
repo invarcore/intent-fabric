@@ -76,7 +76,9 @@ def test_valid_evidence_package_passes():
 def test_tampered_chunk_content_fails():
     """2. Tampering with chunk content causes chunk hash mismatch and is_valid=False."""
     package = _make_valid_package()
-    package["chunks"][0]["content"] = "Tampered content granting unrestricted access without approval."
+    package["chunks"][0]["content"] = (
+        "Tampered content granting unrestricted access without approval."
+    )
 
     result = verify_evidence_package(package, max_age_seconds=60.0)
 
@@ -113,7 +115,13 @@ def test_expired_timestamp_fails():
 
 def test_missing_required_fields_fails():
     """5. Missing required schema keys fail closed with descriptive missing field error."""
-    for required_key in ["retrieval_id", "tenant_id", "timestamp_utc", "chunks", "provenance_digest"]:
+    for required_key in [
+        "retrieval_id",
+        "tenant_id",
+        "timestamp_utc",
+        "chunks",
+        "provenance_digest",
+    ]:
         package = _make_valid_package()
         del package[required_key]
 
@@ -228,7 +236,9 @@ def test_schema_aliases_and_whitespace_tolerance_passes():
     # Replace keys with aliases
     for chunk in package["chunks"]:
         chunk["document_uri"] = chunk.pop("source_uri")
-        chunk["snippet"] = chunk.pop("content") + "\n  "  # Trailing whitespace added during transport
+        chunk["snippet"] = (
+            chunk.pop("content") + "\n  "
+        )  # Trailing whitespace added during transport
         chunk["chunk_hash"] = chunk.pop("provenance_hash")
 
     result = verify_evidence_package(package)
@@ -272,7 +282,9 @@ def test_legacy_colon_signature_rejected():
     rep_digest = str(package.get("provenance_digest", ""))
     ts = str(package.get("timestamp_utc", ""))
     legacy_msg = f"{package['retrieval_id']}:{tenant_val}:{q_fp}:{rep_digest}:{ts}".encode("utf-8")
-    package["package_signature"] = py_hmac.new(key.encode("utf-8"), legacy_msg, py_hashlib.sha256).hexdigest()
+    package["package_signature"] = py_hmac.new(
+        key.encode("utf-8"), legacy_msg, py_hashlib.sha256
+    ).hexdigest()
 
     result = verify_evidence_package(package, hmac_key=key)
     assert result.is_valid is False
@@ -290,6 +302,3 @@ def test_document_uri_alias_accepted():
     assert result.is_valid is True
     assert result.error_reason is None
     assert result.checked_chunks == len(package["chunks"])
-
-
-

@@ -328,7 +328,10 @@ def test_full_ecosystem_happy_path_pipeline() -> None:
                 turn.record_tool(
                     tool_name="enterprise_adapters.dispatch_with_readback",
                     arguments={"action_name": "k8s.restart_deployment", "approval_id": approval_id},
-                    result={"status": envelope.status.value, "correlation_id": envelope.correlation_id},
+                    result={
+                        "status": envelope.status.value,
+                        "correlation_id": envelope.correlation_id,
+                    },
                 )
                 turn.set_response("Execution confirmed via post-action readback.")
                 turn.mutate_state("phase", "execution_confirmed")

@@ -14,9 +14,7 @@ from intent_fabric.contracts.evidence_verifier import (
 )
 
 
-def _make_valid_payload(
-    *, tenant_id: str = "test-tenant", query: str = "test query"
-) -> dict:
+def _make_valid_payload(*, tenant_id: str = "test-tenant", query: str = "test query") -> dict:
     """Construct a valid evidence payload matching Knowledge Fabric output."""
     chunk_1_uri = "docs/policy.md"
     chunk_1_snippet = "MFA is required for all admin access."
@@ -26,9 +24,7 @@ def _make_valid_payload(
     chunk_2_snippet = "New hires complete security training in week one."
     chunk_2_hash = compute_chunk_hash(chunk_2_uri, chunk_2_snippet)
 
-    fingerprint = hashlib.sha256(
-        f"{tenant_id}:{query}:hybrid".encode("utf-8")
-    ).hexdigest()
+    fingerprint = hashlib.sha256(f"{tenant_id}:{query}:hybrid".encode("utf-8")).hexdigest()
 
     digest = compute_package_digest([chunk_1_hash, chunk_2_hash])
 
@@ -145,4 +141,3 @@ def test_hash_algorithm_matches_knowledge_fabric():
         json.dumps([uri, snippet], separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
     assert compute_chunk_hash(uri, snippet) == expected
-

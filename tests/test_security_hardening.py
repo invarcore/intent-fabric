@@ -21,7 +21,12 @@ from intent_fabric.models import (
     IntentRequest,
 )
 from intent_fabric.planning.llm import _build_user_message, _parse_llm_plan
-from intent_fabric.policies.rules import PolicyRule, PolicyRuleSet, RuleDecision, is_valid_action_syntax
+from intent_fabric.policies.rules import (
+    PolicyRule,
+    PolicyRuleSet,
+    RuleDecision,
+    is_valid_action_syntax,
+)
 
 
 def test_action_syntax_validation() -> None:
@@ -39,17 +44,19 @@ def test_action_syntax_validation() -> None:
     # Smuggling, injection, and traversal attacks must be blocked
     assert is_valid_action_syntax("ticket_create\0") is False  # null byte injection
     assert is_valid_action_syntax("../../etc/passwd") is False  # path traversal
-    assert is_valid_action_syntax("db_drop;--") is False       # SQL injection
+    assert is_valid_action_syntax("db_drop;--") is False  # SQL injection
     assert is_valid_action_syntax("action with spaces") is False
-    assert is_valid_action_syntax("a" * 129) is False         # length overflow
-    assert is_valid_action_syntax("") is False                 # empty string
+    assert is_valid_action_syntax("a" * 129) is False  # length overflow
+    assert is_valid_action_syntax("") is False  # empty string
 
 
 def test_action_smuggling_triggers_immediate_deny() -> None:
     """Any action failing syntax validation must trigger immediate RuleDecision.DENY."""
     ruleset = PolicyRuleSet(
         rules=[
-            PolicyRule(action_pattern="*", decision=RuleDecision.ALLOW, reason="Pre-approved wildcard"),
+            PolicyRule(
+                action_pattern="*", decision=RuleDecision.ALLOW, reason="Pre-approved wildcard"
+            ),
         ]
     )
 

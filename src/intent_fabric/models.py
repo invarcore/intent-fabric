@@ -98,7 +98,6 @@ class PolicyDecision:
             self.reason = self.reasons[0]
 
 
-
 @dataclass(slots=True)
 class ApprovalRequest:
     approval_id: str

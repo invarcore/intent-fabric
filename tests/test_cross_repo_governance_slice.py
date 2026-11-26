@@ -15,7 +15,9 @@ from pathlib import Path
 import pytest
 
 # Add enterprise-adapters to path if available locally
-_adapters_path = Path(__file__).resolve().parents[2] / "knowledge-fabric-enterprise-adapters" / "src"
+_adapters_path = (
+    Path(__file__).resolve().parents[2] / "knowledge-fabric-enterprise-adapters" / "src"
+)
 if _adapters_path.exists() and str(_adapters_path) not in sys.path:
     sys.path.insert(0, str(_adapters_path))
 
@@ -27,6 +29,7 @@ try:
         PolicyDecision as AdapterPolicyDecision,
         PolicyDecisionType as AdapterPolicyDecisionType,
     )
+
     HAS_ENTERPRISE_ADAPTERS = True
 except ImportError:
     HAS_ENTERPRISE_ADAPTERS = False

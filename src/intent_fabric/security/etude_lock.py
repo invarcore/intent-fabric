@@ -2,6 +2,7 @@
 Thin re-export shim for backwards compatibility.
 All canonical implementation lives in `intent_fabric.etude_lock`.
 """
+
 from __future__ import annotations
 
 from intent_fabric.etude_lock import (
