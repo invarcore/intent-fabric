@@ -36,7 +36,14 @@ plan = tools.create_plan_from_evidence(
     },
     evidence_package={
         "query_text": "billing address",
-        "items": [{"chunk_id": 10482, "document_uri": "crm://tier", "snippet": "Tier: Enterprise", "score": 0.95}],
+        "items": [
+            {
+                "chunk_id": 10482,
+                "document_uri": "crm://tier",
+                "snippet": "Tier: Enterprise",
+                "score": 0.95,
+            }
+        ],
     },
 )
 
@@ -254,9 +261,16 @@ rules:
 
 ## Quickstart
 
-### 1. Install via PyPI
+### 1. Installation
+
+> **Note:** PyPI publication is pre-release / source install only. Install directly from Git:
+
 ```bash
-pip install intent-fabric
+# Source install via pip
+pip install "git+https://github.com/invarcore/intent-fabric.git"
+
+# Or with uv
+uv add "git+https://github.com/invarcore/intent-fabric.git"
 ```
 
 ### 2. Select Planning Backend
@@ -311,9 +325,9 @@ if decision["payload"]["decision"] == "requires_approval":
 
 # 4. Cryptographically sign approval
 signed = tools.sign_approval(
-    approval_id=approval['payload']['approval_id'],
-    plan_id=plan['payload']['plan_id'],
-    step_ids=approval['payload']['step_ids'],
+    approval_id=approval["payload"]["approval_id"],
+    plan_id=plan["payload"]["plan_id"],
+    step_ids=approval["payload"]["step_ids"],
     decision="approved",
     reviewer="oncall-lead@company.com",
 )

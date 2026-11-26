@@ -269,6 +269,7 @@ def test_etude_cross_invocation_state_guard() -> None:
 def test_vector6_to_vector9_arcbench_compaction_lock() -> None:
     lock: CompactionConstraintLock = build_compaction_constraint_lock(
         compaction_epoch=3,
+        allow_any_tool=True,
         forbidden_tools=["rm_rf", "drop_database"],
         forbidden_path_prefixes=["secrets/prod", r"C:\repo\secrets\prod"],
         pinned_arg_literals={
@@ -317,6 +318,7 @@ def test_vector6_to_vector9_arcbench_compaction_lock() -> None:
 def test_arcbench_v2_hardened_bypasses_and_false_positives_fixed() -> None:
     lock = build_compaction_constraint_lock(
         4,
+        allow_any_tool=True,
         forbidden_tools=["rm_rf"],
         forbidden_path_prefixes=[r"C:\repo\secrets\prod", "secrets/prod", "/etc/"],
         pinned_arg_literals={
@@ -328,17 +330,35 @@ def test_arcbench_v2_hardened_bypasses_and_false_positives_fixed() -> None:
 
     # Bool vs int type confusion blocked
     with pytest.raises(PostCompactionRuleViolationError, match="drifted after compaction"):
-        enforce_post_compaction_lock(lock, "deploy", {"dry_run": 1, "retries": 0, "optional": None})
+        enforce_post_compaction_lock(
+            lock,
+            "deploy",
+            {"dry_run": 1, "retries": 0, "optional": None},
+            observed_model_version="gemini-2.5-pro-002",
+        )
     with pytest.raises(PostCompactionRuleViolationError, match="drifted after compaction"):
         enforce_post_compaction_lock(
-            lock, "deploy", {"dry_run": True, "retries": False, "optional": None}
+            lock,
+            "deploy",
+            {"dry_run": True, "retries": False, "optional": None},
+            observed_model_version="gemini-2.5-pro-002",
         )
     with pytest.raises(
         PostCompactionRuleViolationError, match="required pinned argument 'optional' missing"
     ):
-        enforce_post_compaction_lock(lock, "deploy", {"dry_run": True, "retries": 0})
+        enforce_post_compaction_lock(
+            lock,
+            "deploy",
+            {"dry_run": True, "retries": 0},
+            observed_model_version="gemini-2.5-pro-002",
+        )
     with pytest.raises(PostCompactionRuleViolationError, match="drifted after compaction"):
-        enforce_post_compaction_lock(lock, "nested", {"flags": [1, {"zero": 0}]})
+        enforce_post_compaction_lock(
+            lock,
+            "nested",
+            {"flags": [1, {"zero": 0}]},
+            observed_model_version="gemini-2.5-pro-002",
+        )
 
     # Windows uppercase drive case-folding, dotdot collapse, percent-escape, trailing slash
     for bad_path in (
@@ -349,10 +369,20 @@ def test_arcbench_v2_hardened_bypasses_and_false_positives_fixed() -> None:
         "/etc/passwd",
     ):
         with pytest.raises(PostCompactionRuleViolationError, match="forbidden path prefix"):
-            enforce_post_compaction_lock(lock, "read", {"path": bad_path})
+            enforce_post_compaction_lock(
+                lock,
+                "read",
+                {"path": bad_path},
+                observed_model_version="gemini-2.5-pro-002",
+            )
 
     # Sibling folder false positive is FIXED
-    enforce_post_compaction_lock(lock, "read", {"path": "/app/secrets/products/catalog.json"})
+    enforce_post_compaction_lock(
+        lock,
+        "read",
+        {"path": "/app/secrets/products/catalog.json"},
+        observed_model_version="gemini-2.5-pro-002",
+    )
 
     # Model version strict checks
     with pytest.raises(SilentModelRouteDriftError, match="empty model_version"):
@@ -366,6 +396,7 @@ def test_arcbench_v2_hardened_bypasses_and_false_positives_fixed() -> None:
 def test_arcbench_sidecar_persistence_tamper_and_governed_executor_wiring(tmp_path: Path) -> None:
     lock = build_compaction_constraint_lock(
         2,
+        allow_any_tool=True,
         forbidden_tools=["drop_table"],
         forbidden_path_prefixes=["secrets/prod"],
         pinned_arg_literals={"analysis_review": {"read_only": True}},
@@ -470,6 +501,7 @@ def test_arcbench_sidecar_persistence_tamper_and_governed_executor_wiring(tmp_pa
 def test_arcbench_forbidden_tool_and_canonical_determinism() -> None:
     lock_a = build_compaction_constraint_lock(
         1,
+        allow_any_tool=True,
         forbidden_tools=["b_tool", "a_tool"],
         forbidden_path_prefixes=[r"infra\prod", "infra/prod"],
         pinned_arg_literals={"deploy": {"z": 2, "a": 1}},
@@ -477,6 +509,7 @@ def test_arcbench_forbidden_tool_and_canonical_determinism() -> None:
     )
     lock_b = build_compaction_constraint_lock(
         1,
+        allow_any_tool=True,
         forbidden_tools=["a_tool", "b_tool"],
         forbidden_path_prefixes=["infra/prod"],
         pinned_arg_literals={"deploy": {"a": 1, "z": 2}},
@@ -520,7 +553,9 @@ def test_arcbench_allowed_tools_strict_freeze_and_edge_paths() -> None:
             lock, "read_file", {"targets": {"c:/windows/system32/cmd.exe"}}
         )
 
-    root_lock = build_compaction_constraint_lock(5, forbidden_path_prefixes=["/"])
+    root_lock = build_compaction_constraint_lock(
+        5, allow_any_tool=True, forbidden_path_prefixes=["/"]
+    )
     with pytest.raises(PostCompactionRuleViolationError, match="forbidden path prefix"):
         enforce_post_compaction_lock(root_lock, "read_file", {"path": "/etc/passwd"})
 

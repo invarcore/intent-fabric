@@ -30,6 +30,9 @@ jobs:
       - name: Lint with ruff
         run: uv run ruff check .
 
+      - name: Verify README Claims (TRUTH-01, TRUTH-03, TRUTH-04)
+        run: uv run python scripts/verify_readme_claims.py --offline
+
       - name: Type check with pyright
         run: uv run pyright src
 

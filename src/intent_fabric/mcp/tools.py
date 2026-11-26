@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 from intent_fabric.approvals import ApprovalPackageGenerator
 from intent_fabric.approvals.signing import (
@@ -13,12 +14,20 @@ from intent_fabric.approvals.signing import (
     TokenSigner,
     compute_approval_signature,
 )
-from intent_fabric.compaction_lock import CompactionConstraintLock
+from intent_fabric.compaction_lock import (
+    CompactionConstraintLock,
+    enforce_post_compaction_lock,
+    resolve_and_check_path,
+)
 from intent_fabric.contracts.batched_dag import (
     BatchedDAGToken,
     DAGStepSpec,
     ReadbackState,
     verify_and_execute_batched_dag,
+)
+from intent_fabric.etude_lock import (
+    EtudeToolDriftError,
+    EtudeToolLockRegistry,
 )
 from intent_fabric.mcp.schema import MCP_SCHEMA_VERSION, envelope, unwrap_payload
 from intent_fabric.policies import GovernedExecutionResult, GovernedPolicyExecutor, PolicyEngine
@@ -45,18 +54,129 @@ class IntentFabricMCPTools:
         simulator: SimulationExecutor | None = None,
         governed_executor: GovernedPolicyExecutor | None = None,
         compaction_lock: CompactionConstraintLock | None = None,
+        compaction_signing_key: str | bytes | None = None,
+        etude_registry: EtudeToolLockRegistry | None = None,
+        etude_signing_key: str | bytes | None = None,
+        lockfile_path: str | Path | None = None,
+        require_pinned: bool = True,
+        follow_calls_in: Sequence[str] | None = None,
+        base_dir: str | Path | None = None,
     ) -> None:
         self._planner = planner or build_planner() or RuleBasedPlanner()
         self._policy_engine = policy_engine or PolicyEngine()
         self._approval_generator = approval_generator or ApprovalPackageGenerator()
         self._simulator = simulator or SimulationExecutor()
+        self._compaction_lock = compaction_lock
+        self._compaction_signing_key = compaction_signing_key
+        self._etude_signing_key = etude_signing_key
+        self._require_pinned = require_pinned
+        self._follow_calls_in = tuple(follow_calls_in) if follow_calls_in else ()
+        self._base_dir = base_dir
+
+        # Load explicit lockfile if specified
+        if lockfile_path is not None:
+            p = Path(lockfile_path)
+            if not p.is_file():
+                raise FileNotFoundError(f"Explicit lockfile '{lockfile_path}' does not exist")
+            try:
+                self._etude_registry = EtudeToolLockRegistry.load_lockfile(p, key=etude_signing_key)
+            except (ValueError, EtudeToolDriftError) as exc:
+                if isinstance(exc, EtudeToolDriftError):
+                    raise
+                raise EtudeToolDriftError(
+                    f"Failed to load lockfile '{lockfile_path}': {exc}"
+                ) from exc
+        else:
+            self._etude_registry = etude_registry
+
         self._governed_executor = governed_executor or GovernedPolicyExecutor(
             policy_engine=self._policy_engine,
             planner=self._planner,
             signer=TokenSigner(),
             compaction_lock=compaction_lock,
+            compaction_signing_key=compaction_signing_key,
+            etude_registry=self._etude_registry,
+            require_pinned=require_pinned,
+            follow_calls_in=follow_calls_in,
+            base_dir=base_dir,
         )
         self._consumed_dag_token_ids: set[str] = set()
+        self._handlers: dict[str, Callable[..., Any]] = {}
+        self._schemas: dict[str, Mapping[str, Any]] = {}
+
+    @property
+    def etude_registry(self) -> EtudeToolLockRegistry | None:
+        return self._etude_registry
+
+    def register_tool(
+        self,
+        name: str,
+        handler: Callable[..., Any],
+        schema: Mapping[str, Any] | None = None,
+        allowed_sinks: Sequence[str] | None = None,
+    ) -> None:
+        """Register a tool handler and schema for dispatch."""
+        self._handlers[name] = handler
+        self._schemas[name] = schema or {"name": name}
+        self._governed_executor.register_tool(
+            name, handler, schema=schema, allowed_sinks=allowed_sinks
+        )
+
+    def dispatch_tool_call(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        *,
+        observed_model_version: str | None = None,
+        require_model_version: bool = True,
+    ) -> Any:
+        """Dispatches an MCP tool call through Etude and Compaction security gates."""
+        # 1. Fail-closed Etude gate
+        if self._require_pinned and self._etude_registry is not None:
+            if self._etude_registry.get_lock(tool_name) is None:
+                raise EtudeToolDriftError(f"Tool '{tool_name}' is not pinned in etude registry")
+            handler = self._handlers.get(tool_name)
+            if handler is None:
+                raise EtudeToolDriftError(f"No handler registered for tool '{tool_name}'")
+            schema = self._schemas.get(tool_name, {"name": tool_name})
+            self._etude_registry.verify_tool(
+                tool_name,
+                schema,
+                handler,
+                follow_calls_in=self._follow_calls_in,
+            )
+
+        # 2. Compaction constraint lock check
+        if self._compaction_lock is not None:
+            enforce_post_compaction_lock(
+                self._compaction_lock,
+                tool_name,
+                tool_args,
+                observed_model_version=observed_model_version,
+                require_model_version=require_model_version,
+                signing_key=self._compaction_signing_key,
+            )
+
+        # 3. Path check (C2)
+        if self._compaction_lock and getattr(
+            self._compaction_lock, "forbidden_path_prefixes", None
+        ):
+            for k in ("path", "file", "filepath", "filename"):
+                if k in tool_args and isinstance(tool_args[k], (str, Path, bytes)):
+                    resolve_and_check_path(
+                        tool_args[k],
+                        self._compaction_lock.forbidden_path_prefixes,
+                        base_dir=self._base_dir,
+                    )
+
+        # 4. Invoke handler
+        handler = self._handlers.get(tool_name)
+        if handler is None:
+            raise KeyError(f"Tool '{tool_name}' not registered in IntentFabricMCPTools")
+        try:
+            return handler(**tool_args)
+        except TypeError:
+            return handler(tool_args)
 
     def health_check(self) -> dict[str, Any]:
         planner_name = type(self._planner).__name__
@@ -173,6 +293,7 @@ class IntentFabricMCPTools:
         max_age_seconds: float = 60.0,
         *,
         compaction_lock: CompactionConstraintLock | None = None,
+        compaction_signing_key: str | bytes | None = None,
         observed_model_version: str | None = None,
         require_model_version: bool = False,
     ) -> dict[str, Any]:
@@ -182,7 +303,8 @@ class IntentFabricMCPTools:
             intent_goal=intent_goal,
             evidence_package=evidence_package,
             max_age_seconds=max_age_seconds,
-            compaction_lock=compaction_lock,
+            compaction_lock=compaction_lock or self._compaction_lock,
+            compaction_signing_key=compaction_signing_key or self._compaction_signing_key,
             observed_model_version=observed_model_version,
             require_model_version=require_model_version,
         )
@@ -262,6 +384,7 @@ def evaluate_governed_intent(
     max_age_seconds: float = 60.0,
     *,
     compaction_lock: CompactionConstraintLock | None = None,
+    compaction_signing_key: str | bytes | None = None,
     observed_model_version: str | None = None,
     require_model_version: bool = False,
 ) -> dict[str, Any]:
@@ -275,6 +398,7 @@ def evaluate_governed_intent(
         evidence_package=evidence_package,
         max_age_seconds=max_age_seconds,
         compaction_lock=compaction_lock,
+        compaction_signing_key=compaction_signing_key,
         observed_model_version=observed_model_version,
         require_model_version=require_model_version,
     )
