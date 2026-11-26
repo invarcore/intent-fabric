@@ -20,4 +20,3 @@ __all__ = [
     "compute_approval_signature",
     "verify_approval_signature",
 ]
-

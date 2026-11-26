@@ -164,7 +164,11 @@ class SignedExecutionToken:
     def __post_init__(self) -> None:
         if not self.signature:
             key_bytes = get_signing_key()
-            canonical = f"{self.plan_id}|{self.provenance_digest}|{self.tenant_id}|{self.timestamp}".encode("utf-8")
+            canonical = (
+                f"{self.plan_id}|{self.provenance_digest}|{self.tenant_id}|{self.timestamp}".encode(
+                    "utf-8"
+                )
+            )
             self.signature = hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
         if not self.token_str:
             self.token_str = f"token.{self.plan_id}.{self.signature[:16]}"
@@ -201,7 +205,10 @@ class TokenSigner:
         if not token or not token.signature:
             return False
         key_bytes = get_signing_key(self.secret_key)
-        canonical = f"{token.plan_id}|{token.provenance_digest}|{token.tenant_id}|{token.timestamp}".encode("utf-8")
+        canonical = (
+            f"{token.plan_id}|{token.provenance_digest}|{token.tenant_id}|{token.timestamp}".encode(
+                "utf-8"
+            )
+        )
         expected = hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, token.signature)
-

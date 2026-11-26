@@ -1,0 +1,34 @@
+name: ETUDE Tool Lockfile Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-tool-lock:
+    name: Verify Agent Tools Lockfile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Intent Fabric
+        run: uv pip install --system -e .
+
+      - name: Check ETUDE tool lockfile drift
+        if: hashFiles('agent-tools.lock') != ''
+        run: |
+          python -m intent_fabric.cli lock check . --lockfile agent-tools.lock
